@@ -58,7 +58,8 @@ export default function AccountsPage() {
   const [terminateServiceId, setTerminateServiceId] = useState<string | null>(null);
   const [terminateToken, setTerminateToken] = useState<string | null>(null);
   const [terminateExpiresAt, setTerminateExpiresAt] = useState<number | null>(null);
-  const [terminateRemaining, setTerminateRemaining] = useState<number>(0);// Details View State
+  const [terminateRemaining, setTerminateRemaining] = useState<number>(0);
+// Details View State
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsServiceId, setDetailsServiceId] = useState<string | null>(null);
   const [settingCredentials, setSettingCredentials] = useState(false);
@@ -321,13 +322,13 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Users className="h-6 w-6 text-blue-500" />
+        <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
+          <Users className="h-6 w-6 text-primary" />
           Accounts
         </h1>
         <button
           onClick={() => setShowWizard(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+          className="btn-primary"
         >
           <Plus className="h-4 w-4" />
           Create Account
@@ -335,7 +336,7 @@ export default function AccountsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm">
+        <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-2 rounded-[var(--radius-card)] text-sm">
           {error}
         </div>
       )}
@@ -343,18 +344,18 @@ export default function AccountsPage() {
       {/* Wizard Modal */}
       {showWizard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
-              <h3 className="font-semibold text-white">Create Account Wizard</h3>
-              <button onClick={() => setShowWizard(false)} className="text-zinc-500 hover:text-white">✕</button>
+          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-semibold text-text-main">Create Account Wizard</h3>
+              <button onClick={() => setShowWizard(false)} className="text-text-muted hover:text-text-main">✕</button>
             </div>
             <form onSubmit={handleCreateAccount} className="p-6 space-y-4">
               <div className="flex gap-4 mb-2 text-sm">
                 <button
                   type="button"
                   onClick={() => setCustomerMode("existing")}
-                  className={`px-3 py-1 rounded border text-xs ${
-                    customerMode === "existing" ? "border-blue-500 text-blue-400" : "border-zinc-700 text-zinc-400"
+                  className={`px-3 py-1 rounded-[var(--radius-card)] border text-xs transition-colors ${
+                    customerMode === "existing" ? "border-primary text-primary bg-primary/5" : "border-border text-text-muted"
                   }`}
                 >
                   Existing Customer
@@ -362,8 +363,8 @@ export default function AccountsPage() {
                 <button
                   type="button"
                   onClick={() => setCustomerMode("new")}
-                  className={`px-3 py-1 rounded border text-xs ${
-                    customerMode === "new" ? "border-blue-500 text-blue-400" : "border-zinc-700 text-zinc-400"
+                  className={`px-3 py-1 rounded-[var(--radius-card)] border text-xs transition-colors ${
+                    customerMode === "new" ? "border-primary text-primary bg-primary/5" : "border-border text-text-muted"
                   }`}
                 >
                   New Customer
@@ -372,11 +373,11 @@ export default function AccountsPage() {
               <div>
                 {customerMode === "existing" ? (
                   <>
-                    <label className="block text-xs uppercase text-zinc-500 mb-1">Customer</label>
+                    <label className="label-text">Customer</label>
                     <select
                       value={newServiceCustomerId}
                       onChange={(e) => setNewServiceCustomerId(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                       disabled={wizardStep > 1}
                     >
@@ -389,23 +390,23 @@ export default function AccountsPage() {
                 ) : (
                   <div className="space-y-2">
                     <div>
-                      <label className="block text-xs uppercase text-zinc-500 mb-1">Customer Name</label>
+                      <label className="label-text">Customer Name</label>
                       <input
                         type="text"
                         value={newCustomerName}
                         onChange={(e) => setNewCustomerName(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                        className="input-field"
                         required
                         disabled={wizardStep > 1}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs uppercase text-zinc-500 mb-1">Customer Email</label>
+                      <label className="label-text">Customer Email</label>
                       <input
                         type="email"
                         value={newCustomerEmail}
                         onChange={(e) => setNewCustomerEmail(e.target.value)}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                        className="input-field"
                         required
                         disabled={wizardStep > 1}
                       />
@@ -415,24 +416,24 @@ export default function AccountsPage() {
               </div>
               
               <div>
-                <label className="block text-xs uppercase text-zinc-500 mb-1">Primary Domain</label>
+                <label className="label-text">Primary Domain</label>
                 <input
                     type="text"
                     placeholder="example.com"
                     value={newServiceDomain}
                     onChange={(e) => setNewServiceDomain(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                    className="input-field"
                     required
                     disabled={wizardStep > 1}
                 />
               </div>
 
               <div>
-                <label className="block text-xs uppercase text-zinc-500 mb-1">Package</label>
+                <label className="label-text">Package</label>
                 <select
                     value={newServicePlan}
                     onChange={(e) => setNewServicePlan(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                    className="input-field"
                     required
                     disabled={wizardStep > 1}
                 >
@@ -449,16 +450,16 @@ export default function AccountsPage() {
                     id="autoProvision"
                     checked={autoProvision}
                     onChange={(e) => setAutoProvision(e.target.checked)}
-                    className="rounded border-zinc-800 bg-zinc-950 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-border bg-surface text-primary focus:ring-primary"
                     disabled={wizardStep > 1}
                 />
-                <label htmlFor="autoProvision" className="text-sm text-zinc-300 select-none">
+                <label htmlFor="autoProvision" className="text-sm text-text-main select-none">
                     Auto-provision after create
                 </label>
               </div>
 
               {autoProvision && toolWarning && (
-                <div className="text-[11px] text-amber-400 bg-amber-900/20 border border-amber-900/40 rounded px-3 py-2">
+                <div className="text-[11px] text-warning bg-warning/10 border border-warning/20 rounded px-3 py-2">
                   {toolWarning}
                 </div>
               )}
@@ -467,7 +468,7 @@ export default function AccountsPage() {
                 <button
                     type="button"
                     onClick={() => setShowWizard(false)}
-                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                    className="btn-secondary"
                     disabled={wizardStep > 1}
                 >
                     Cancel
@@ -475,7 +476,7 @@ export default function AccountsPage() {
                 <button
                     type="submit"
                     disabled={wizardStep > 1 || (customerMode === "existing" ? !newServiceCustomerId : !newCustomerName || !newCustomerEmail)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                    className="btn-primary"
                 >
                     {wizardStep === 2 ? "Creating..." : "Create Account"}
                 </button>
@@ -487,7 +488,7 @@ export default function AccountsPage() {
 
       {/* Pending Terminations Banner */}
       {pendingTerminations.length > 0 && (
-        <div className="bg-red-900/20 border border-red-900/40 text-red-300 px-4 py-3 rounded">
+        <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-3 rounded-[var(--radius-card)]">
           {pendingTerminations.length === 1 ? (
             <span>Termination pending for {pendingTerminations[0].primaryDomain}. You may cancel before confirmation.</span>
           ) : (
@@ -497,10 +498,10 @@ export default function AccountsPage() {
       )}
 
       {/* Accounts Table */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-zinc-400">
-                <thead className="bg-zinc-950 text-xs uppercase text-zinc-500 font-medium">
+            <table className="w-full text-left text-sm text-text-muted">
+                <thead className="table-header">
                     <tr>
                         <th className="px-4 py-3">Domain</th>
                         <th className="px-4 py-3">User / Plan</th>
@@ -509,10 +510,10 @@ export default function AccountsPage() {
                         <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800">
+                <tbody className="divide-y divide-border">
                     {services.length === 0 ? (
                         <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-zinc-600">
+                            <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
                                 No accounts found.
                             </td>
                         </tr>
@@ -520,22 +521,22 @@ export default function AccountsPage() {
                         services.map(s => {
                             const isBusy = serviceActionId === s.id;
                             return (
-                                <tr key={s.id} className="hover:bg-zinc-800/50 transition-colors">
-                                    <td className="px-4 py-3 font-medium text-zinc-200">
+                                <tr key={s.id} className="table-row">
+                                    <td className="px-4 py-3 font-medium text-text-main">
                                         {s.primaryDomain}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <div className="text-zinc-300">{getCustomerName(s.customerId)}</div>
-                                        <div className="text-xs text-zinc-500">{s.planName || 'basic'}</div>
+                                        <div className="text-text-main">{getCustomerName(s.customerId)}</div>
+                                        <div className="text-xs text-text-muted">{s.planName || 'basic'}</div>
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase ${
-                                            isBusy ? 'bg-zinc-800 text-zinc-400 animate-pulse' :
-                                            s.status === 'active' ? 'bg-emerald-900/30 text-emerald-400' :
-                                            s.status === 'suspended' ? 'bg-amber-900/30 text-amber-400' :
-                                            s.status === 'provisioning' ? 'bg-blue-900/30 text-blue-400' :
-                                            s.status === 'termination_pending' ? 'bg-red-900/30 text-red-400' :
-                                            'bg-zinc-800 text-zinc-400'
+                                            isBusy ? 'bg-surface text-text-muted animate-pulse' :
+                                            s.status === 'active' ? 'bg-success/10 text-success' :
+                                            s.status === 'suspended' ? 'bg-warning/10 text-warning' :
+                                            s.status === 'provisioning' ? 'bg-primary/10 text-primary' :
+                                            s.status === 'termination_pending' ? 'bg-danger/10 text-danger' :
+                                            'bg-surface-hover text-text-muted'
                                         }`}>
                                             {isBusy ? serviceActionLabel : s.status}
                                         </span>
@@ -550,7 +551,7 @@ export default function AccountsPage() {
                                                 <button
                                                     onClick={withServiceAction(s.id, 'Provisioning', 'provision')}
                                                     disabled={isBusy}
-                                                    className="p-1.5 text-blue-400 hover:bg-blue-900/30 rounded disabled:opacity-50"
+                                                    className="p-1.5 text-primary hover:bg-primary/10 rounded disabled:opacity-50"
                                                     title="Provision"
                                                 >
                                                     <Play className="h-4 w-4" />
@@ -561,7 +562,7 @@ export default function AccountsPage() {
                                                 <button
                                                     onClick={withServiceAction(s.id, 'Suspending', 'suspend')}
                                                     disabled={isBusy}
-                                                    className="p-1.5 text-amber-400 hover:bg-amber-900/30 rounded disabled:opacity-50"
+                                                    className="p-1.5 text-warning hover:bg-warning/10 rounded disabled:opacity-50"
                                                     title="Suspend"
                                                 >
                                                     <Pause className="h-4 w-4" />
@@ -572,7 +573,7 @@ export default function AccountsPage() {
                                                 <button
                                                     onClick={withServiceAction(s.id, 'Unsuspending', 'unsuspend')}
                                                     disabled={isBusy}
-                                                    className="p-1.5 text-emerald-400 hover:bg-emerald-900/30 rounded disabled:opacity-50"
+                                                    className="p-1.5 text-success hover:bg-success/10 rounded disabled:opacity-50"
                                                     title="Unsuspend"
                                                 >
                                                     <Play className="h-4 w-4" />
@@ -583,7 +584,7 @@ export default function AccountsPage() {
                                               <button
                                                 onClick={() => openTerminateFlow(s.id)}
                                                 disabled={isBusy}
-                                                className="p-1.5 text-red-400 hover:bg-red-900/30 rounded disabled:opacity-50"
+                                                className="p-1.5 text-danger hover:bg-danger/10 rounded disabled:opacity-50"
                                                 title="Terminate"
                                               >
                                                 <Trash2 className="h-4 w-4" />
@@ -593,7 +594,7 @@ export default function AccountsPage() {
                                             <button
                                               onClick={() => openDetails(s.id)}
                                               disabled={isBusy}
-                                              className="p-1.5 text-zinc-400 hover:bg-zinc-800/50 rounded disabled:opacity-50"
+                                              className="p-1.5 text-text-muted hover:bg-surface-hover rounded disabled:opacity-50"
                                               title="Account Details"
                                             >
                                               Details
@@ -603,7 +604,7 @@ export default function AccountsPage() {
                                               <button
                                                 onClick={() => cancelTerminate(s.id)}
                                                 disabled={isBusy}
-                                                className="p-1.5 text-amber-400 hover:bg-amber-900/30 rounded disabled:opacity-50"
+                                                className="p-1.5 text-warning hover:bg-warning/10 rounded disabled:opacity-50"
                                                 title="Cancel Termination"
                                               >
                                                 Cancel
@@ -623,19 +624,19 @@ export default function AccountsPage() {
       {/* Termination Confirm Modal */}
       {showTerminateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
-              <h3 className="font-semibold text-white">Confirm Termination</h3>
-              <button onClick={() => setShowTerminateModal(false)} className="text-zinc-500 hover:text-white">✕</button>
+          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-semibold text-text-main">Confirm Termination</h3>
+              <button onClick={() => setShowTerminateModal(false)} className="text-text-muted hover:text-text-main">✕</button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded p-3">
+              <div className="text-sm text-danger bg-danger/10 border border-danger/20 rounded p-3">
                 This will permanently delete the hosting account and data.
               </div>
-              <div className="text-sm text-zinc-300">
-                Token: <span className="font-mono text-zinc-200">{terminateToken}</span>
+              <div className="text-sm text-text-muted">
+                Token: <span className="font-mono text-text-main">{terminateToken}</span>
               </div>
-              <div className="text-xs text-zinc-400">
+              <div className="text-xs text-text-muted">
                 {terminateExpiresAt ? (
                   terminateRemaining > 0 ? `Token expires in ${Math.floor(terminateRemaining/60)}m ${terminateRemaining%60}s` : 'Token expired'
                 ) : 'No expiry provided'}
@@ -644,7 +645,7 @@ export default function AccountsPage() {
                 <button
                   type="button"
                   onClick={() => setShowTerminateModal(false)}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
@@ -652,7 +653,7 @@ export default function AccountsPage() {
                   type="button"
                   onClick={confirmTerminate}
                   disabled={terminateRemaining <= 0}
-                  className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                  className="bg-danger hover:bg-danger-hover text-white px-4 py-2 rounded-[var(--radius-card)] text-sm font-medium disabled:opacity-50"
                 >
                   Confirm Termination
                 </button>
@@ -665,10 +666,10 @@ export default function AccountsPage() {
       {/* Account Details Modal */}
       {showDetailsModal && detailsServiceId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
-              <h3 className="font-semibold text-white">Account Details</h3>
-              <button onClick={() => setShowDetailsModal(false)} className="text-zinc-500 hover:text-white">✕</button>
+          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-semibold text-text-main">Account Details</h3>
+              <button onClick={() => setShowDetailsModal(false)} className="text-text-muted hover:text-text-main">✕</button>
             </div>
             <div className="p-6 space-y-4">
               {(() => {
@@ -676,7 +677,7 @@ export default function AccountsPage() {
                 const text = svc ? buildDetailsText(svc) : '';
                 return (
                   <>
-                    <pre className="bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-300 whitespace-pre-wrap">{text}</pre>
+                    <pre className="bg-surface-hover border border-border rounded p-3 text-xs text-text-main whitespace-pre-wrap">{text}</pre>
                     <div className="flex justify-end gap-3">
                       <button
                           type="button"
@@ -704,14 +705,14 @@ export default function AccountsPage() {
                                 setSettingCredentials(false);
                             }
                           }}
-                          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+                          className="btn-primary"
                         >
                           {settingCredentials ? "Setting..." : "Set Initial Credentials"}
                         </button>
                       <button
                         type="button"
                         onClick={() => navigator.clipboard.writeText(text)}
-                        className="px-4 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 text-white rounded"
+                        className="btn-secondary"
                       >
                         Copy
                       </button>

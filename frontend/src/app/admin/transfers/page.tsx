@@ -239,20 +239,20 @@ export default function TransfersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <ArrowRightLeft className="h-6 w-6 text-blue-500" />
+        <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
+          <ArrowRightLeft className="h-6 w-6 text-primary" />
           Transfers
         </h1>
         <div className="flex gap-2">
             <button
             onClick={fetchData}
-            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-2 rounded text-sm transition-colors"
+            className="btn-secondary"
             >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
             <button
             onClick={() => setShowWizard(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+            className="btn-primary"
             >
             <Plus className="h-4 w-4" />
             New Transfer
@@ -261,7 +261,7 @@ export default function TransfersPage() {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2">
+        <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-2 rounded-[var(--radius-card)] text-sm flex items-center gap-2">
           <ShieldAlert className="h-4 w-4" />
           {error}
         </div>
@@ -270,34 +270,34 @@ export default function TransfersPage() {
       {/* Details View Modal */}
       {selectedJob && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
-                  <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+              <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+                  <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-surface-hover">
                       <div>
-                          <h3 className="font-semibold text-white flex items-center gap-2">
+                          <h3 className="font-semibold text-text-main flex items-center gap-2">
                               {selectedJob.name}
-                              <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${
-                                  selectedJob.status === 'completed' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-900/50' :
-                                  selectedJob.status === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-900/50' :
-                                  selectedJob.status === 'running' ? 'bg-blue-900/30 text-blue-400 border border-blue-900/50 animate-pulse' :
-                                  'bg-zinc-800 text-zinc-400'
+                              <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded border ${
+                                  selectedJob.status === 'completed' ? 'bg-success/10 text-success border-success/20' :
+                                  selectedJob.status === 'failed' ? 'bg-danger/10 text-danger border-danger/20' :
+                                  selectedJob.status === 'running' ? 'bg-primary/10 text-primary border-primary/20 animate-pulse' :
+                                  'bg-surface text-text-muted border-border'
                               }`}>
                                   {selectedJob.status}
                               </span>
                           </h3>
-                          <div className="text-xs text-zinc-500 font-mono mt-1">{selectedJob.id}</div>
+                          <div className="text-xs text-text-muted font-mono mt-1">{selectedJob.id}</div>
                       </div>
                       <div className="flex gap-3">
                         {selectedJob.status === 'pending' && (
                              <button 
                                 onClick={handleStartMigration}
                                 disabled={starting}
-                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                                className="flex items-center gap-2 btn-primary text-xs py-1.5"
                              >
                                  {starting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                                  {starting ? "Starting..." : "Start Migration"}
                              </button>
                         )}
-                        <button onClick={() => setSelectedJob(null)} className="text-zinc-500 hover:text-white">
+                        <button onClick={() => setSelectedJob(null)} className="text-text-muted hover:text-text-main">
                             <X className="h-5 w-5" />
                         </button>
                       </div>
@@ -305,27 +305,27 @@ export default function TransfersPage() {
                   
                   <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
                       {/* Steps List */}
-                      <div className="w-full md:w-1/3 border-r border-zinc-800 overflow-y-auto bg-zinc-900/50">
+                      <div className="w-full md:w-1/3 border-r border-border overflow-y-auto bg-surface">
                           <div className="p-4 space-y-2">
-                              <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Migration Steps</h4>
+                              <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Migration Steps</h4>
                               {steps.length === 0 ? (
-                                  <div className="text-xs text-zinc-600 italic text-center py-4">
+                                  <div className="text-xs text-text-muted italic text-center py-4">
                                       Steps will be generated when started.
                                   </div>
                               ) : (
                                   steps.map(step => (
-                                      <div key={step.id} className={`p-3 rounded border text-xs ${
-                                          step.status === 'running' ? 'bg-blue-900/10 border-blue-900/30 text-blue-200' :
-                                          step.status === 'completed' ? 'bg-emerald-900/10 border-emerald-900/30 text-emerald-200' :
-                                          step.status === 'failed' ? 'bg-red-900/10 border-red-900/30 text-red-200' :
-                                          'bg-zinc-950 border-zinc-800 text-zinc-400'
+                                      <div key={step.id} className={`p-3 rounded-[var(--radius-card)] border text-xs ${
+                                          step.status === 'running' ? 'bg-primary/5 border-primary/20 text-primary' :
+                                          step.status === 'completed' ? 'bg-success/5 border-success/20 text-success' :
+                                          step.status === 'failed' ? 'bg-danger/5 border-danger/20 text-danger' :
+                                          'bg-surface-hover border-border text-text-muted'
                                       }`}>
                                           <div className="flex justify-between items-center mb-1">
                                               <span className="font-medium">{step.name}</span>
-                                              {step.status === 'running' && <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />}
+                                              {step.status === 'running' && <RefreshCw className="h-3 w-3 animate-spin text-primary" />}
                                           </div>
                                           {step.lastError && (
-                                              <div className="mt-1 text-red-400 break-words bg-red-950/50 p-1.5 rounded">
+                                              <div className="mt-1 text-danger break-words bg-danger/5 p-1.5 rounded">
                                                   {step.lastError.message}
                                               </div>
                                           )}
@@ -336,7 +336,7 @@ export default function TransfersPage() {
                       </div>
                       
                       {/* Logs View */}
-                      <div className="flex-1 bg-black overflow-y-auto font-mono text-xs p-4">
+                      <div className="flex-1 bg-black text-white overflow-y-auto font-mono text-xs p-4">
                           <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                               <Terminal className="h-3 w-3" />
                               Execution Logs
@@ -369,10 +369,10 @@ export default function TransfersPage() {
       {/* Create Transfer Wizard */}
       {showWizard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
-              <h3 className="font-semibold text-white">New Transfer Job</h3>
-              <button onClick={() => setShowWizard(false)} className="text-zinc-500 hover:text-white">
+          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-semibold text-text-main">New Transfer Job</h3>
+              <button onClick={() => setShowWizard(false)} className="text-text-muted hover:text-text-main">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -380,27 +380,27 @@ export default function TransfersPage() {
               
               {/* Job Details */}
               <div className="space-y-4">
-                <h4 className="text-xs uppercase text-blue-400 font-semibold tracking-wider">Source Connection</h4>
+                <h4 className="text-xs uppercase text-primary font-semibold tracking-wider">Source Connection</h4>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">Job Name</label>
+                        <label className="label-text">Job Name</label>
                         <input
                             type="text"
                             placeholder="Migration Job 1"
                             value={formData.name}
                             onChange={(e) => setFormData({...formData, name: e.target.value})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">Source Host (IP)</label>
+                        <label className="label-text">Source Host (IP)</label>
                         <input
                             type="text"
                             placeholder="192.168.1.100"
                             value={formData.sourceHost}
                             onChange={(e) => setFormData({...formData, sourceHost: e.target.value})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                             required
                         />
                     </div>
@@ -408,80 +408,80 @@ export default function TransfersPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">SSH User</label>
+                        <label className="label-text">SSH User</label>
                         <input
                             type="text"
                             placeholder="root"
                             value={formData.sourceUser}
                             onChange={(e) => setFormData({...formData, sourceUser: e.target.value})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">SSH Port</label>
+                        <label className="label-text">SSH Port</label>
                         <input
                             type="number"
                             placeholder="22"
                             value={formData.sourcePort}
                             onChange={(e) => setFormData({...formData, sourcePort: parseInt(e.target.value) || 22})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                         />
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-xs uppercase text-zinc-500 mb-2">Authentication Method</label>
+                    <label className="label-text mb-2">Authentication Method</label>
                     <div className="flex gap-4 mb-2">
-                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 text-xs text-text-main cursor-pointer select-none">
                             <input 
                                 type="radio" 
                                 name="authMethod"
                                 value="system"
                                 checked={formData.authMethod === 'system'}
                                 onChange={() => setFormData({...formData, authMethod: 'system'})}
-                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                                className="bg-surface border-border text-primary focus:ring-primary"
                             />
                             System Key
                         </label>
-                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 text-xs text-text-main cursor-pointer select-none">
                             <input 
                                 type="radio" 
                                 name="authMethod"
                                 value="password"
                                 checked={formData.authMethod === 'password'}
                                 onChange={() => setFormData({...formData, authMethod: 'password'})}
-                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                                className="bg-surface border-border text-primary focus:ring-primary"
                             />
                             Password
                         </label>
-                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 text-xs text-text-main cursor-pointer select-none">
                             <input 
                                 type="radio" 
                                 name="authMethod"
                                 value="key"
                                 checked={formData.authMethod === 'key'}
                                 onChange={() => setFormData({...formData, authMethod: 'key'})}
-                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                                className="bg-surface border-border text-primary focus:ring-primary"
                             />
                             Private Key
                         </label>
                     </div>
 
                     {formData.authMethod === 'system' && (
-                        <p className="text-[10px] text-zinc-600">
+                        <p className="text-[10px] text-text-muted">
                             Ensure local SSH key is authorized on source host for this user.
                         </p>
                     )}
 
                     {formData.authMethod === 'password' && (
                         <div className="mt-2">
-                            <label className="block text-xs uppercase text-zinc-500 mb-1">SSH Password</label>
+                            <label className="label-text">SSH Password</label>
                             <input
                                 type="password"
                                 value={formData.sourcePassword}
                                 onChange={(e) => setFormData({...formData, sourcePassword: e.target.value})}
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                                className="input-field"
                                 placeholder="Password"
                             />
                         </div>
@@ -489,11 +489,11 @@ export default function TransfersPage() {
 
                     {formData.authMethod === 'key' && (
                         <div className="mt-2">
-                            <label className="block text-xs uppercase text-zinc-500 mb-1">Private Key</label>
+                            <label className="label-text">Private Key</label>
                             <textarea
                                 value={formData.sourceKey}
                                 onChange={(e) => setFormData({...formData, sourceKey: e.target.value})}
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 font-mono text-xs h-32"
+                                className="input-field font-mono text-xs h-32"
                                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                             />
                         </div>
@@ -502,19 +502,19 @@ export default function TransfersPage() {
               </div>
               
               {sshKey && formData.authMethod === 'system' && (
-                <div className="bg-zinc-950 border border-zinc-800 rounded p-3 mt-4">
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1 font-semibold">System Public Key</label>
-                    <p className="text-[10px] text-zinc-500 mb-2">
-                        Copy and append this key to <code className="text-zinc-400">/root/.ssh/authorized_keys</code> on the source server.
+                <div className="bg-surface border border-border rounded p-3 mt-4">
+                    <label className="block text-[10px] uppercase text-text-muted mb-1 font-semibold">System Public Key</label>
+                    <p className="text-[10px] text-text-muted mb-2">
+                        Copy and append this key to <code className="text-text-main">/root/.ssh/authorized_keys</code> on the source server.
                     </p>
                     <div className="flex gap-2">
-                        <code className="flex-1 bg-black/50 p-2 rounded text-[10px] text-zinc-400 font-mono break-all max-h-20 overflow-y-auto border border-zinc-900">
+                        <code className="flex-1 bg-surface-hover p-2 rounded text-[10px] text-text-muted font-mono break-all max-h-20 overflow-y-auto border border-border">
                             {sshKey}
                         </code>
                         <button
                             type="button"
                             onClick={() => navigator.clipboard.writeText(sshKey)}
-                            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1 rounded text-xs transition-colors h-fit self-start"
+                            className="btn-secondary text-xs h-fit self-start"
                         >
                             Copy
                         </button>
@@ -522,31 +522,31 @@ export default function TransfersPage() {
                 </div>
               )}
 
-              <div className="border-t border-zinc-800 my-4"></div>
+              <div className="border-t border-border my-4"></div>
 
               {/* Account Details */}
               <div className="space-y-4">
-                <h4 className="text-xs uppercase text-emerald-400 font-semibold tracking-wider">Account to Migrate</h4>
+                <h4 className="text-xs uppercase text-success font-semibold tracking-wider">Account to Migrate</h4>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">Source Username</label>
+                        <label className="label-text">Source Username</label>
                         <input
                             type="text"
                             placeholder="cpaneluser"
                             value={formData.sourceUsername}
                             onChange={(e) => setFormData({...formData, sourceUsername: e.target.value})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-1">Primary Domain</label>
+                        <label className="label-text">Primary Domain</label>
                         <input
                             type="text"
                             placeholder="example.com"
                             value={formData.sourceDomain}
                             onChange={(e) => setFormData({...formData, sourceDomain: e.target.value})}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            className="input-field"
                             required
                         />
                     </div>
@@ -559,18 +559,18 @@ export default function TransfersPage() {
                     id="dryRun"
                     checked={formData.dryRun}
                     onChange={(e) => setFormData({...formData, dryRun: e.target.checked})}
-                    className="rounded border-zinc-800 bg-zinc-950 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-border bg-surface text-primary focus:ring-primary"
                 />
-                <label htmlFor="dryRun" className="text-sm text-zinc-300 select-none">
+                <label htmlFor="dryRun" className="text-sm text-text-main select-none">
                     Dry Run (Test connection & rsync without modifying target)
                 </label>
               </div>
 
-              <div className="flex gap-3 justify-end pt-4 border-t border-zinc-800 mt-4">
+              <div className="flex gap-3 justify-end pt-4 border-t border-border mt-4">
                 <button
                     type="button"
                     onClick={() => setShowWizard(false)}
-                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                    className="btn-secondary"
                     disabled={creating}
                 >
                     Cancel
@@ -578,7 +578,7 @@ export default function TransfersPage() {
                 <button
                     type="submit"
                     disabled={creating}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                    className="btn-primary"
                 >
                     {creating ? (
                         <>
@@ -599,13 +599,13 @@ export default function TransfersPage() {
       )}
 
       {transfers.length === 0 ? (
-        <div className="text-center py-12 text-zinc-500 bg-zinc-900/50 rounded-lg border border-zinc-800 border-dashed">
+        <div className="text-center py-12 text-text-muted bg-surface/50 rounded-lg border border-border border-dashed">
             No active or past transfers found. Click "New Transfer" to start.
         </div>
       ) : (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-            <table className="w-full text-left text-sm text-zinc-400">
-                <thead className="bg-zinc-950 text-xs uppercase text-zinc-500 font-medium">
+        <div className="card overflow-hidden">
+            <table className="w-full text-left text-sm text-text-muted">
+                <thead className="table-header">
                     <tr>
                         <th className="px-4 py-3">Job Name</th>
                         <th className="px-4 py-3">Source</th>
@@ -614,29 +614,29 @@ export default function TransfersPage() {
                         <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800">
+                <tbody className="divide-y divide-border">
                     {transfers.map(t => (
-                        <tr key={t.id} className="hover:bg-zinc-800/50">
-                            <td className="px-4 py-3 font-medium text-zinc-200">
+                        <tr key={t.id} className="table-row">
+                            <td className="px-4 py-3 font-medium text-text-main">
                                 {t.name}
-                                <div className="text-[10px] text-zinc-500 font-mono">{t.id}</div>
+                                <div className="text-[10px] text-text-muted font-mono">{t.id}</div>
                             </td>
                             <td className="px-4 py-3">
                                 {t.sourceType === 'cpanel_live_ssh' ? 'Live SSH' : t.sourceType}
                             </td>
                             <td className="px-4 py-3">
                                 {t.dryRun ? (
-                                    <span className="text-xs bg-amber-900/30 text-amber-400 px-2 py-0.5 rounded border border-amber-900/50">Dry Run</span>
+                                    <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded border border-warning/20">Dry Run</span>
                                 ) : (
-                                    <span className="text-xs bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded border border-blue-900/50">Live</span>
+                                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20">Live</span>
                                 )}
                             </td>
                             <td className="px-4 py-3 uppercase text-xs">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase ${
-                                    t.status === 'completed' ? 'bg-emerald-900/30 text-emerald-400' :
-                                    t.status === 'failed' ? 'bg-red-900/30 text-red-400' :
-                                    t.status === 'running' ? 'bg-blue-900/30 text-blue-400 animate-pulse' :
-                                    'bg-zinc-800 text-zinc-400'
+                                    t.status === 'completed' ? 'bg-success/10 text-success' :
+                                    t.status === 'failed' ? 'bg-danger/10 text-danger' :
+                                    t.status === 'running' ? 'bg-primary/10 text-primary animate-pulse' :
+                                    'bg-surface-hover text-text-muted'
                                 }`}>
                                     {t.status}
                                 </span>
@@ -647,7 +647,7 @@ export default function TransfersPage() {
                                         setSelectedJob(t);
                                         fetchJobDetails(t.id);
                                     }}
-                                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 py-1 rounded inline-flex items-center gap-1 transition-colors"
+                                    className="btn-secondary text-xs px-2 py-1 h-auto inline-flex items-center gap-1"
                                 >
                                     <Eye className="h-3 w-3" />
                                     View

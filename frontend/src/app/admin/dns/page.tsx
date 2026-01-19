@@ -110,20 +110,20 @@ export default function DnsZonesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Globe className="h-6 w-6 text-purple-500" />
+        <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
+          <Globe className="h-6 w-6 text-primary" />
           DNS Zones
         </h1>
         <div className="flex gap-2">
             <button
                 onClick={fetchZones}
-                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-2 rounded text-sm transition-colors"
+                className="btn-secondary"
             >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
             <button
                 onClick={() => setShowCreate(true)}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                className="btn-primary"
             >
                 <Plus className="h-4 w-4" />
                 New Zone
@@ -132,22 +132,22 @@ export default function DnsZonesPage() {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2">
+        <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-2 rounded-[var(--radius-card)] text-sm flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>
       )}
 
       {showCreate && (
-        <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-lg flex flex-col md:flex-row gap-4 items-end animate-in fade-in slide-in-from-top-4">
+        <div className="card p-4 flex flex-col md:flex-row gap-4 items-end animate-in fade-in slide-in-from-top-4">
           <div className="flex-1 w-full">
-            <label className="block text-xs uppercase text-zinc-500 mb-1 font-medium">Zone Name</label>
+            <label className="label-text">Zone Name</label>
             <input
               type="text"
               placeholder="example.com"
               value={newZoneName}
               onChange={(e) => setNewZoneName(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-purple-500"
+              className="input-field"
               autoFocus
             />
           </div>
@@ -155,13 +155,13 @@ export default function DnsZonesPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !newZoneName}
-              className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+              className="flex-1 md:flex-none btn-primary bg-success hover:bg-success-hover text-success-fg border-success"
             >
               {creating ? "Creating..." : "Create"}
             </button>
             <button
               onClick={() => setShowCreate(false)}
-              className="flex-1 md:flex-none bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded text-sm font-medium"
+              className="flex-1 md:flex-none btn-secondary"
             >
               Cancel
             </button>
@@ -169,22 +169,22 @@ export default function DnsZonesPage() {
         </div>
       )}
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <table className="w-full text-left text-sm text-zinc-400">
-          <thead className="bg-zinc-950 text-xs uppercase text-zinc-500 font-medium">
+      <div className="card overflow-hidden">
+        <table className="w-full text-left text-sm text-text-muted">
+          <thead className="table-header">
             <tr>
               <th className="px-4 py-3">Zone Name</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800">
+          <tbody className="divide-y divide-border">
             {zones.map((zone) => (
-              <tr key={zone} className="hover:bg-zinc-800/50 transition-colors">
-                <td className="px-4 py-3 text-zinc-200 font-medium font-mono">{zone}</td>
+              <tr key={zone} className="table-row">
+                <td className="px-4 py-3 text-text-main font-medium font-mono">{zone}</td>
                 <td className="px-4 py-3 text-right flex justify-end gap-2">
                   <Link
                     href={`/admin/dns/${zone}`}
-                    className="flex items-center gap-1 bg-zinc-800 hover:bg-blue-600 hover:text-white text-zinc-400 px-2 py-1 rounded text-xs transition-colors"
+                    className="flex items-center gap-1 btn-secondary text-xs px-2 py-1 h-auto"
                   >
                     <Edit className="h-3 w-3" />
                     Edit
@@ -192,7 +192,7 @@ export default function DnsZonesPage() {
                   <button
                     onClick={() => handleDelete(zone)}
                     disabled={deleting === zone}
-                    className="flex items-center gap-1 bg-zinc-800 hover:bg-red-600 hover:text-white text-zinc-400 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1 btn-secondary text-xs px-2 py-1 h-auto hover:bg-danger hover:text-danger-fg hover:border-danger"
                   >
                     {deleting === zone ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                     Delete
@@ -202,14 +202,14 @@ export default function DnsZonesPage() {
             ))}
             {zones.length === 0 && !loading && (
               <tr>
-                <td colSpan={2} className="px-4 py-12 text-center text-zinc-600 italic border-dashed border-zinc-800">
+                <td colSpan={2} className="px-4 py-12 text-center text-text-muted italic">
                   No DNS zones found. Create one to get started.
                 </td>
               </tr>
             )}
             {loading && zones.length === 0 && (
                 <tr>
-                    <td colSpan={2} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={2} className="px-4 py-8 text-center text-text-muted">
                         <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
                         Loading zones...
                     </td>

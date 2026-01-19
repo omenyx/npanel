@@ -13,6 +13,7 @@ import {
   Menu,
   Globe,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AdminLayout({
   children,
@@ -43,7 +44,7 @@ export default function AdminLayout({
 
   if (!authorized) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-black text-zinc-400">
+      <div className="flex h-screen w-full items-center justify-center bg-background text-text-muted">
         <div className="animate-pulse">Loading admin context...</div>
       </div>
     );
@@ -93,23 +94,23 @@ export default function AdminLayout({
   };
 
   return (
-    <div className="flex h-screen w-full bg-black text-zinc-200 font-sans selection:bg-blue-500/30">
+    <div className="flex h-screen w-full bg-background text-text-main font-sans selection:bg-primary/30 selection:text-primary">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-border bg-surface transition-transform duration-200 md:static md:translate-x-0 ${
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-          <div className="flex items-center gap-2 font-bold text-white">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-blue-600 text-[10px]">
+        <div className="flex h-14 items-center justify-between border-b border-border px-4">
+          <div className="flex items-center gap-2 font-bold text-text-main">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-primary text-[10px] text-primary-fg">
               N
             </div>
             <span>Panel</span>
           </div>
           <button
             onClick={() => setIsMobileMenuOpen(false)}
-            className="md:hidden text-zinc-400"
+            className="md:hidden text-text-muted hover:text-text-main"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -117,7 +118,7 @@ export default function AdminLayout({
 
         <div className="flex flex-col justify-between h-[calc(100vh-3.5rem)]">
           <nav className="flex-1 space-y-1 p-2">
-            <div className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
               Management
             </div>
             {navItems.map((item) => {
@@ -128,10 +129,10 @@ export default function AdminLayout({
                   key={item.href}
                   href={item.href}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
+                  className={`flex items-center gap-3 rounded-[var(--radius-card)] px-3 py-2 text-sm transition-colors ${
                     isActive
-                      ? "bg-blue-900/20 text-blue-400"
-                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-text-muted hover:bg-surface-hover hover:text-text-main"
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -141,10 +142,14 @@ export default function AdminLayout({
             })}
           </nav>
 
-          <div className="border-t border-zinc-800 p-2">
+          <div className="border-t border-border p-4 space-y-2">
+            <div className="flex items-center justify-between px-2">
+                <span className="text-xs text-text-muted font-medium">Theme</span>
+                <ThemeToggle />
+            </div>
             <button
               onClick={handleLogout}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors"
+              className="flex w-full items-center gap-3 rounded-[var(--radius-card)] px-3 py-2 text-sm text-text-muted hover:bg-surface-hover hover:text-danger transition-colors"
             >
               <LogOut className="h-4 w-4" />
               Logout
@@ -155,17 +160,17 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b border-zinc-800 bg-zinc-950 px-4 md:hidden">
+        <header className="flex h-14 items-center border-b border-border bg-surface px-4 md:hidden">
           <button
             onClick={() => setIsMobileMenuOpen(true)}
-            className="text-zinc-400"
+            className="text-text-muted"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="ml-3 font-semibold text-white">NPanel</span>
+          <span className="ml-3 font-semibold text-text-main">NPanel</span>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-black p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
           <div className="mx-auto max-w-6xl">
             {children}
           </div>

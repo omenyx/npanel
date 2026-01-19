@@ -175,13 +175,13 @@ export default function PackagesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Package className="h-6 w-6 text-blue-500" />
+        <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
+          <Package className="h-6 w-6 text-primary" />
           Packages
         </h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+          className="btn-primary"
         >
           <Plus className="h-4 w-4" />
           Add Package
@@ -189,17 +189,17 @@ export default function PackagesPage() {
       </div>
 
       {error && !showCreate && (
-          <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2">
+          <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-2 rounded-[var(--radius-card)] text-sm flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
             {error}
           </div>
       )}
 
       {showCreate && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
-            <h3 className="text-lg font-semibold text-white mb-4">New Package</h3>
+        <div className="card p-6 mb-6">
+            <h3 className="text-lg font-semibold text-text-main mb-4">New Package</h3>
             {error && (
-                <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2 mb-4">
+                <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-2 rounded-[var(--radius-card)] text-sm flex items-center gap-2 mb-4">
                   <AlertTriangle className="h-4 w-4" />
                   {error}
                 </div>
@@ -207,36 +207,36 @@ export default function PackagesPage() {
             <form onSubmit={handleCreatePlan} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Package Name</label>
+                    <label className="label-text">Package Name</label>
                     <input
                       type="text"
                       placeholder="e.g. basic, pro, enterprise"
                       value={newPlanName}
                       onChange={(e) => setNewPlanName(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Disk Quota (MB)</label>
+                    <label className="label-text">Disk Quota (MB)</label>
                     <input
                       type="number"
                       min="0"
                       value={newPlanDisk}
                       onChange={(e) => setNewPlanDisk(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">Set to 0 for unlimited</p>
+                    <p className="text-[10px] text-text-muted mt-1">Set to 0 for unlimited</p>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">PHP Version</label>
+                    <label className="label-text">PHP Version</label>
                     <select
                       value={newPlanPhp}
                       onChange={(e) => setNewPlanPhp(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     >
                       {['7.4', '8.0', '8.1', '8.2', '8.3'].map(v => (
@@ -246,55 +246,55 @@ export default function PackagesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max Databases</label>
+                    <label className="label-text">Max Databases</label>
                     <input
                       type="number"
                       min="-1"
                       value={newPlanMaxDbs}
                       onChange={(e) => setNewPlanMaxDbs(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
+                    <p className="text-[10px] text-text-muted mt-1">Set to -1 for unlimited</p>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max FTP Accounts</label>
+                    <label className="label-text">Max FTP Accounts</label>
                     <input
                       type="number"
                       min="-1"
                       value={newPlanMaxFtp}
                       onChange={(e) => setNewPlanMaxFtp(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
+                    <p className="text-[10px] text-text-muted mt-1">Set to -1 for unlimited</p>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Mailbox Quota (MB)</label>
+                    <label className="label-text">Mailbox Quota (MB)</label>
                     <input
                       type="number"
                       min="0"
                       value={newPlanMailboxQuota}
                       onChange={(e) => setNewPlanMailboxQuota(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">Set to 0 for unlimited</p>
+                    <p className="text-[10px] text-text-muted mt-1">Set to 0 for unlimited</p>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max Mailboxes</label>
+                    <label className="label-text">Max Mailboxes</label>
                     <input
                       type="number"
                       min="-1"
                       value={newPlanMaxMailboxes}
                       onChange={(e) => setNewPlanMaxMailboxes(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                      className="input-field"
                       required
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
+                    <p className="text-[10px] text-text-muted mt-1">Set to -1 for unlimited</p>
                   </div>
                 </div>
 
@@ -303,14 +303,14 @@ export default function PackagesPage() {
                     type="button"
                     onClick={() => setShowCreate(false)}
                     disabled={creating}
-                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white disabled:opacity-50"
+                    className="btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={creating}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                    className="btn-primary"
                   >
                     {creating && <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white" />}
                     {creating ? "Creating..." : "Create Package"}
@@ -324,37 +324,37 @@ export default function PackagesPage() {
         {plans.map((p) => {
             const usageCount = getUsageCount(p.name);
             return (
-                <div key={p.name} className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 flex flex-col justify-between">
+                <div key={p.name} className="card p-5 flex flex-col justify-between">
                     <div>
                         <div className="flex justify-between items-start mb-2">
-                            <h3 className="font-bold text-white text-lg">{p.name}</h3>
+                            <h3 className="font-bold text-text-main text-lg">{p.name}</h3>
                             {usageCount > 0 ? (
-                                <span className="text-[10px] bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full border border-blue-900/50">
+                                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
                                     {usageCount} accounts
                                 </span>
                             ) : (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full border border-zinc-700">
+                                <span className="text-[10px] bg-surface-hover text-text-muted px-2 py-0.5 rounded-full border border-border">
                                     Unused
                                 </span>
                             )}
                         </div>
-                        <div className="space-y-1 text-sm text-zinc-400">
-                            <div className="flex justify-between"><span>Disk:</span> <span className="text-zinc-200">{formatLimit(p.diskQuotaMb, "MB")}</span></div>
-                            <div className="flex justify-between"><span>PHP:</span> <span className="text-zinc-200">{p.phpVersion}</span></div>
-                            <div className="flex justify-between"><span>DBs:</span> <span className="text-zinc-200">{formatLimit(p.maxDatabases)}</span></div>
-                            <div className="flex justify-between"><span>Mail:</span> <span className="text-zinc-200">{formatLimit(p.maxMailboxes)} ({p.mailboxQuotaMb} MB)</span></div>
-                            <div className="flex justify-between"><span>FTP:</span> <span className="text-zinc-200">{formatLimit(p.maxFtpAccounts)}</span></div>
+                        <div className="space-y-1 text-sm text-text-muted">
+                            <div className="flex justify-between"><span>Disk:</span> <span className="text-text-main">{formatLimit(p.diskQuotaMb, "MB")}</span></div>
+                            <div className="flex justify-between"><span>PHP:</span> <span className="text-text-main">{p.phpVersion}</span></div>
+                            <div className="flex justify-between"><span>DBs:</span> <span className="text-text-main">{formatLimit(p.maxDatabases)}</span></div>
+                            <div className="flex justify-between"><span>Mail:</span> <span className="text-text-main">{formatLimit(p.maxMailboxes)} ({p.mailboxQuotaMb} MB)</span></div>
+                            <div className="flex justify-between"><span>FTP:</span> <span className="text-text-main">{formatLimit(p.maxFtpAccounts)}</span></div>
                         </div>
                     </div>
-                    <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end">
+                    <div className="mt-4 pt-4 border-t border-border flex justify-end">
                         <button 
                             onClick={() => handleDelete(p.name)}
                             disabled={deleting === p.name}
-                            className="text-zinc-500 hover:text-red-400 transition-colors p-1 disabled:opacity-50"
+                            className="text-text-muted hover:text-danger transition-colors p-1 disabled:opacity-50"
                             title="Delete Package"
                         >
                             {deleting === p.name ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500/20 border-t-red-500" />
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-danger/20 border-t-danger" />
                             ) : (
                                 <Trash2 className="h-4 w-4" />
                             )}
