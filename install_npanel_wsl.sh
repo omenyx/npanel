@@ -58,7 +58,9 @@ ensure_services_start() {
   
   # Handle DNS Service: Prefer PowerDNS if installed, fallback to Bind9, or warn.
   if [[ -x /usr/sbin/pdns_server ]]; then
-      log "Starting PowerDNS..."
+      log "Starting PowerDNS (and disabling bind9 to avoid conflict)..."
+      systemctl disable bind9 --now 2>/dev/null || service bind9 stop 2>/dev/null || true
+      systemctl disable named --now 2>/dev/null || service named stop 2>/dev/null || true
       service pdns start || log "Failed to start PowerDNS"
   else
       # Attempt to start bind9 only if pdns is not present
@@ -90,10 +92,16 @@ ensure_repo() {
   fi
 
   if [[ -d "$dest/.git" ]]; then
-    log "Repo exists at $dest, pulling latest changes..."
-    cd "$dest" || return
-    git pull || log "Git pull failed (possibly dirty state), continuing..."
-    return
+    if [[ "$1" == "--update" ]]; then
+        log "Update flag set. Pulling latest changes..."
+        cd "$dest" || return
+        git reset --hard origin/main || true
+        git pull || log "Git pull failed, continuing..."
+        return
+    else
+        log "Repo exists at $dest. Use --update to force pull."
+        return
+    fi
   fi
 
   if [[ -d "$dest" && -n "$(ls -A "$dest")" ]]; then
@@ -244,6 +252,12 @@ check_ports() {
      service nginx stop 2>/dev/null || true
      service mysql stop 2>/dev/null || true
   fi
+  
+  # Ensure no DNS conflicts (stop both bind9 and pdns before starting the right one)
+  log "Stopping existing DNS services to prevent conflicts..."
+  service bind9 stop 2>/dev/null || true
+  service named stop 2>/dev/null || true
+  service pdns stop 2>/dev/null || true
 }
 
 install_dependencies() {
@@ -354,7 +368,7 @@ main() {
   install_dependencies
   ensure_services_start
   setup_mysql
-  ensure_repo
+  ensure_repo "$1"
   install_npanel_dependencies
   write_env
   verify_tools
