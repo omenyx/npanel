@@ -397,6 +397,35 @@ check_ports() {
   service pdns stop 2>/dev/null || true
 }
 
+disable_selinux() {
+  # SELinux is typically not found on standard Ubuntu, but might be present on some custom images or other distros.
+  # We check for the 'sestatus' command or /etc/selinux/config
+  
+  if command -v sestatus >/dev/null 2>&1; then
+      log "Checking SELinux status..."
+      local status; status=$(sestatus | grep "SELinux status" | awk '{print $3}')
+      if [[ "$status" == "enabled" ]]; then
+          log "SELinux is enabled. Disabling it permanently..."
+          
+          # Set permissive mode immediately
+          setenforce 0 || true
+          
+          # Update config file to be permanent across reboots
+          if [[ -f /etc/selinux/config ]]; then
+             sed -i 's/^SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+             sed -i 's/^SELINUX=permissive/SELINUX=disabled/g' /etc/selinux/config
+             log "SELinux has been disabled in /etc/selinux/config."
+          else
+             log "Warning: SELinux is active but /etc/selinux/config not found. Could not disable permanently."
+          fi
+      else
+          log "SELinux is already disabled or permissive."
+      fi
+  else
+      log "SELinux tools not found (typical for Ubuntu). Skipping."
+  fi
+}
+
 install_dependencies() {
   log "Installing system dependencies"
   
@@ -551,6 +580,7 @@ main() {
   log "Starting Npanel WSL Installer..."
   check_compatibility
   require_root
+  disable_selinux
   check_ports
   install_dependencies
   ensure_services_start
