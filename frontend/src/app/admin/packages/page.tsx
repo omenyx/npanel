@@ -60,26 +60,42 @@ export default function PackagesPage() {
 
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Create plan clicked"); // Debug log
     setError(null);
     const token = window.localStorage.getItem("npanel_access_token");
     if (!token) return;
 
     try {
+      // Validate inputs
+      const disk = parseInt(newPlanDisk, 10);
+      const maxDbs = parseInt(newPlanMaxDbs, 10);
+      const mailboxQuota = parseInt(newPlanMailboxQuota, 10);
+      const maxMailboxes = parseInt(newPlanMaxMailboxes, 10);
+      const maxFtp = parseInt(newPlanMaxFtp, 10);
+
+      if (isNaN(disk) || isNaN(maxDbs) || isNaN(mailboxQuota) || isNaN(maxMailboxes) || isNaN(maxFtp)) {
+         throw new Error("Invalid numeric values");
+      }
+
+      const payload = {
+          name: newPlanName,
+          diskQuotaMb: disk,
+          phpVersion: newPlanPhp,
+          maxDatabases: maxDbs,
+          mailboxQuotaMb: mailboxQuota,
+          maxMailboxes: maxMailboxes,
+          maxFtpAccounts: maxFtp,
+      };
+      
+      console.log("Submitting payload:", payload);
+
       const res = await fetch("http://127.0.0.1:3000/v1/hosting/plans", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: newPlanName,
-          diskQuotaMb: parseInt(newPlanDisk, 10),
-          phpVersion: newPlanPhp,
-          maxDatabases: parseInt(newPlanMaxDbs, 10),
-          mailboxQuotaMb: parseInt(newPlanMailboxQuota, 10),
-          maxMailboxes: parseInt(newPlanMaxMailboxes, 10),
-          maxFtpAccounts: parseInt(newPlanMaxFtp, 10),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -98,6 +114,7 @@ export default function PackagesPage() {
       setNewPlanMaxMailboxes("1");
       setNewPlanMaxFtp("1");
     } catch (err) {
+      console.error("Error creating plan:", err);
       setError(err instanceof Error ? err.message : "Failed to create plan");
     }
   };
@@ -157,6 +174,12 @@ export default function PackagesPage() {
       {showCreate && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
             <h3 className="text-lg font-semibold text-white mb-4">New Package</h3>
+            {error && (
+                <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2 mb-4">
+                  <AlertTriangle className="h-4 w-4" />
+                  {error}
+                </div>
+            )}
             <form onSubmit={handleCreatePlan} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
