@@ -51,6 +51,7 @@ const MANAGED_SERVICES = [
   { id: 'dovecot', label: 'Dovecot IMAP/POP3' },
   { id: 'ssh', label: 'SSH Server' },
   { id: 'npanel-backend', label: 'Npanel Backend' },
+  { id: 'npanel-frontend', label: 'Npanel Frontend' },
 ];
 
 export default function ServerPage() {
@@ -58,6 +59,7 @@ export default function ServerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [restartingService, setRestartingService] = useState<string | null>(null);
+  const [customService, setCustomService] = useState("");
 
   const fetchStatus = async () => {
     setLoading(true);
@@ -93,7 +95,12 @@ export default function ServerPage() {
     if (!confirm(`Are you sure you want to restart ${serviceId}?`)) return;
     
     setRestartingService(serviceId);
-    const token = window.localStorage.getItem("npanel_access_token");
+    let token: string | null = null;
+    try {
+      token = window.localStorage.getItem("npanel_access_token");
+    } catch {
+      token = null;
+    }
     try {
       const res = await fetch("http://127.0.0.1:3000/system/tools/restart-service", {
         method: "POST",
@@ -290,6 +297,32 @@ export default function ServerPage() {
                      </button>
                    </div>
                  ))}
+               </div>
+               <div className="mt-4 border-t border-zinc-800 pt-4">
+                 <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Custom Service</div>
+                 <div className="mt-2 flex gap-2">
+                   <input
+                     value={customService}
+                     onChange={(e) => setCustomService(e.target.value)}
+                     placeholder="e.g. redis-server, postfix, php8.3-fpm"
+                     className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                   />
+                   <button
+                     onClick={() => handleRestartService(customService.trim())}
+                     disabled={!customService.trim() || restartingService === customService.trim()}
+                     className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     {restartingService === customService.trim() ? (
+                       <RefreshCw className="h-3 w-3 animate-spin" />
+                     ) : (
+                       <Play className="h-3 w-3" />
+                     )}
+                     Restart
+                   </button>
+                 </div>
+                 <div className="mt-2 text-xs text-zinc-500">
+                   Allowed services can be extended with NPANEL_ALLOWED_RESTART_SERVICES.
+                 </div>
                </div>
             </div>
           </div>
