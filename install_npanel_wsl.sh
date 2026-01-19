@@ -244,9 +244,26 @@ ensure_repo() {
     if [[ "$1" == "--update" ]]; then
         log "Update flag set. Syncing to origin/main..."
         cd "$dest" || return
+        
+        # Stash any local changes (e.g., config tweaks, hacks)
+        if [[ -n "$(git status --porcelain)" ]]; then
+            log "Stashing local changes..."
+            git stash save "Auto-update stash $(date +%s)"
+        fi
+
         git fetch origin
         git reset --hard origin/main
-        git clean -fd
+        
+        # Try to re-apply local changes
+        if git stash list | grep -q "Auto-update stash"; then
+            log "Restoring local changes..."
+            git stash pop || log "Warning: Merge conflict during stash pop. Local changes may be in conflict markers."
+        fi
+        
+        # Clean untracked files only if strictly necessary? 
+        # Better to leave them in case user added custom files.
+        # git clean -fd 
+        
         return
     else
         log "Repo exists at $dest. Use --update to force pull."
