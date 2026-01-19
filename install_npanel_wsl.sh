@@ -275,13 +275,6 @@ write_env() {
 NODE_ENV=development
 PORT=3000
 
-DATABASE_TYPE=mysql
-DATABASE_HOST=127.0.0.1
-DATABASE_PORT=3306
-DATABASE_NAME=npanel
-DATABASE_USER=npanel
-DATABASE_PASSWORD=npanel_dev_password
-
 JWT_SECRET=$jwt
 
 NPANEL_HOSTING_DRY_RUN=0
@@ -297,7 +290,8 @@ NPANEL_RSYNC_CMD=/usr/bin/rsync
 NPANEL_BIND_RNDC_CMD=/usr/sbin/rndc
 NPANEL_EXIM_CMD=/usr/sbin/exim
 NPANEL_DOVECOT_CMD=/usr/sbin/dovecot
-NPANEL_FTP_CMD=/usr/sbin/useradd
+NPANEL_FTP_CMD=
+NPANEL_MAIL_CMD=
 EOF
 }
 
