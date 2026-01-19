@@ -189,12 +189,37 @@ export class ToolsController {
   @Get('logs/files')
   async getLogFiles() {
     const candidates = [
-      '/var/log/syslog',
-      '/var/log/auth.log',
+      // System
+      '/var/log/syslog',       // Debian/Ubuntu
+      '/var/log/messages',     // RHEL/CentOS/Alma
+      '/var/log/auth.log',     // Debian/Ubuntu
+      '/var/log/secure',       // RHEL/CentOS/Alma
+      '/var/log/cron',         // RHEL/CentOS/Alma
+      '/var/log/dmesg',        // Kernel
+      '/var/log/boot.log',     // Boot
+
+      // Web Server (Nginx)
       '/var/log/nginx/access.log',
       '/var/log/nginx/error.log',
-      '/var/log/mysql/error.log',
-      '/var/log/exim4/mainlog',
+      
+      // Web Server (Apache/Httpd - if applicable)
+      '/var/log/apache2/access.log', // Debian/Ubuntu
+      '/var/log/apache2/error.log',  // Debian/Ubuntu
+      '/var/log/httpd/access_log',   // RHEL/CentOS/Alma
+      '/var/log/httpd/error_log',    // RHEL/CentOS/Alma
+
+      // Database
+      '/var/log/mysql/error.log',      // MySQL
+      '/var/log/mariadb/mariadb.log',  // MariaDB
+      '/var/log/postgresql/postgresql.log', // Postgres (often versioned dir though)
+
+      // Mail
+      '/var/log/mail.log',     // General mail
+      '/var/log/maillog',      // RHEL/CentOS/Alma
+      '/var/log/exim4/mainlog', // Exim (Debian)
+      '/var/log/exim/main.log', // Exim (RHEL)
+
+      // Npanel
       '/var/log/npanel-backend.log',
       '/var/log/npanel-frontend.log',
       '/var/log/npanel.log',
