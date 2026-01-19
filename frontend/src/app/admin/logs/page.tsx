@@ -48,7 +48,7 @@ export default function LogsPage() {
         throw new Error("Failed to fetch logs");
       }
     } catch (err) {
-      setErrorLogs("Failed to load panel logs");
+      setErrorLogs(`Failed to load panel logs: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoadingLogs(false);
     }
