@@ -26,6 +26,12 @@ export class ToolsController {
     }
     return {
       tools: results,
+      serverInfo: {
+        defaultIpv4: '127.0.0.1',
+        dnsBackend: 'PowerDNS',
+        mailBackend: 'Exim4 + Dovecot',
+        ftpBackend: 'System Users',
+      },
     };
   }
 }
