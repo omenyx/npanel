@@ -24,7 +24,12 @@ export default function AdminLayout({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const token = window.localStorage.getItem("npanel_access_token");
+    let token: string | null = null;
+    try {
+      token = window.localStorage.getItem("npanel_access_token");
+    } catch {
+      token = null;
+    }
     if (!token) {
       router.push("/login");
       return;
@@ -72,7 +77,12 @@ export default function AdminLayout({
   ];
 
   const handleLogout = () => {
-    window.localStorage.removeItem("npanel_access_token");
+    try {
+      window.localStorage.removeItem("npanel_access_token");
+      window.localStorage.removeItem("npanel_refresh_token");
+    } catch {
+      return;
+    }
     router.push("/login");
   };
 

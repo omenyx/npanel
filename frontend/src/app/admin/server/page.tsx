@@ -62,8 +62,16 @@ export default function ServerPage() {
   const fetchStatus = async () => {
     setLoading(true);
     setError(null);
-    const token = window.localStorage.getItem("npanel_access_token");
-    if (!token) return;
+    let token: string | null = null;
+    try {
+      token = window.localStorage.getItem("npanel_access_token");
+    } catch {
+      token = null;
+    }
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch("http://127.0.0.1:3000/system/tools/status", {
