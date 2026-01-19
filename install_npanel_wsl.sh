@@ -196,7 +196,8 @@ install_dependencies() {
   ensure_nodesource_20
   
   # Note: bind9 might fail to start in WSL2 due to systemd issues, ignoring failure
-  DEBIAN_FRONTEND=noninteractive apt-get install -y npm mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
+  # Remove 'npm' from apt install because NodeSource nodejs package already includes npm
+  DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
 }
 
 install_npanel_dependencies() {
