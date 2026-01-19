@@ -10,6 +10,7 @@ export default function DnsZonesPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newZoneName, setNewZoneName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -82,7 +83,13 @@ export default function DnsZonesPage() {
 
   const handleDelete = async (zone: string) => {
     if (!confirm(`Are you sure you want to delete the zone ${zone}? This cannot be undone.`)) return;
+    setDeleting(zone);
+    setError(null);
     const token = window.localStorage.getItem("npanel_access_token");
+    if (!token) {
+        setDeleting(null);
+        return;
+    }
     try {
       const res = await fetch(`http://127.0.0.1:3000/v1/dns/zones/${zone}`, {
         method: "DELETE",
@@ -91,10 +98,12 @@ export default function DnsZonesPage() {
       if (res.ok) {
         fetchZones();
       } else {
-        alert("Failed to delete zone");
+        setError("Failed to delete zone");
       }
     } catch (e) {
-      alert("Error deleting zone");
+      setError("Error deleting zone");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -182,9 +191,10 @@ export default function DnsZonesPage() {
                   </Link>
                   <button
                     onClick={() => handleDelete(zone)}
-                    className="flex items-center gap-1 bg-zinc-800 hover:bg-red-600 hover:text-white text-zinc-400 px-2 py-1 rounded text-xs transition-colors"
+                    disabled={deleting === zone}
+                    className="flex items-center gap-1 bg-zinc-800 hover:bg-red-600 hover:text-white text-zinc-400 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    {deleting === zone ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                     Delete
                   </button>
                 </td>

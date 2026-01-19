@@ -58,9 +58,10 @@ export default function AccountsPage() {
   const [terminateServiceId, setTerminateServiceId] = useState<string | null>(null);
   const [terminateToken, setTerminateToken] = useState<string | null>(null);
   const [terminateExpiresAt, setTerminateExpiresAt] = useState<number | null>(null);
-  const [terminateRemaining, setTerminateRemaining] = useState<number>(0);
+  const [terminateRemaining, setTerminateRemaining] = useState<number>(0);// Details View State
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsServiceId, setDetailsServiceId] = useState<string | null>(null);
+  const [settingCredentials, setSettingCredentials] = useState(false);
 
   useEffect(() => {
     let timer: any;
@@ -678,26 +679,35 @@ export default function AccountsPage() {
                     <pre className="bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-300 whitespace-pre-wrap">{text}</pre>
                     <div className="flex justify-end gap-3">
                       <button
-                        type="button"
-                        onClick={async () => {
-                          if (!svc) return;
-                          const token = window.localStorage.getItem("npanel_access_token");
-                          const res = await fetch(`http://127.0.0.1:3000/v1/hosting/services/${svc.id}/credentials/init`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                            body: JSON.stringify({}),
-                          });
-                          const payload = await res.json().catch(() => ({}));
-                          if (!res.ok) {
-                            setError(payload?.message || "Failed to set initial credentials");
-                            return;
-                          }
-                          setCreationCredentials({ credentials: { mysqlPassword: creationCredentials?.credentials?.mysqlPassword, mailboxPassword: payload.mailboxPassword, ftpPassword: payload.ftpPassword } });
-                        }}
-                        className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded"
-                      >
-                        Set Initial Credentials
-                      </button>
+                          type="button"
+                          disabled={settingCredentials}
+                          onClick={async () => {
+                            if (!svc) return;
+                            setSettingCredentials(true);
+                            setError(null);
+                            const token = window.localStorage.getItem("npanel_access_token");
+                            try {
+                                const res = await fetch(`http://127.0.0.1:3000/v1/hosting/services/${svc.id}/credentials/init`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                    body: JSON.stringify({}),
+                                });
+                                const payload = await res.json().catch(() => ({}));
+                                if (!res.ok) {
+                                    setError(payload?.message || "Failed to set initial credentials");
+                                    return;
+                                }
+                                setCreationCredentials({ credentials: { mysqlPassword: creationCredentials?.credentials?.mysqlPassword, mailboxPassword: payload.mailboxPassword, ftpPassword: payload.ftpPassword } });
+                            } catch (e) {
+                                setError("Failed to set credentials");
+                            } finally {
+                                setSettingCredentials(false);
+                            }
+                          }}
+                          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+                        >
+                          {settingCredentials ? "Setting..." : "Set Initial Credentials"}
+                        </button>
                       <button
                         type="button"
                         onClick={() => navigator.clipboard.writeText(text)}

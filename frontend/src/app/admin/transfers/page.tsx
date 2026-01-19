@@ -52,6 +52,7 @@ export default function TransfersPage() {
   const [steps, setSteps] = useState<MigrationStep[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
   const [polling, setPolling] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -132,8 +133,13 @@ export default function TransfersPage() {
 
   const handleStartMigration = async () => {
       if (!selectedJob) return;
+      setStarting(true);
+      setError(null);
       const token = window.localStorage.getItem("npanel_access_token");
-      if (!token) return;
+      if (!token) {
+          setStarting(false);
+          return;
+      }
       try {
           await fetch(`http://127.0.0.1:3000/v1/migrations/${selectedJob.id}/start`, {
               method: 'POST',
@@ -142,7 +148,9 @@ export default function TransfersPage() {
           // Refresh details immediately
           fetchJobDetails(selectedJob.id);
       } catch (e) {
-          alert("Failed to start migration");
+          setError("Failed to start migration");
+      } finally {
+          setStarting(false);
       }
   };
 
@@ -282,10 +290,11 @@ export default function TransfersPage() {
                         {selectedJob.status === 'pending' && (
                              <button 
                                 onClick={handleStartMigration}
-                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium"
+                                disabled={starting}
+                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
                              >
-                                 <Play className="h-3 w-3" />
-                                 Start Migration
+                                 {starting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                                 {starting ? "Starting..." : "Start Migration"}
                              </button>
                         )}
                         <button onClick={() => setSelectedJob(null)} className="text-zinc-500 hover:text-white">

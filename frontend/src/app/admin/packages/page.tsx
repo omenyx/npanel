@@ -23,6 +23,10 @@ export default function PackagesPage() {
   const [services, setServices] = useState<HostingService[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Loading states for actions
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Create State
   const [showCreate, setShowCreate] = useState(false);
@@ -62,8 +66,12 @@ export default function PackagesPage() {
     e.preventDefault();
     console.log("Create plan clicked"); // Debug log
     setError(null);
+    setCreating(true);
     const token = window.localStorage.getItem("npanel_access_token");
-    if (!token) return;
+    if (!token) {
+        setCreating(false);
+        return;
+    }
 
     try {
       // Validate inputs
@@ -116,6 +124,8 @@ export default function PackagesPage() {
     } catch (err) {
       console.error("Error creating plan:", err);
       setError(err instanceof Error ? err.message : "Failed to create plan");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -132,14 +142,19 @@ export default function PackagesPage() {
   const handleDelete = async (planName: string) => {
     const usage = getUsageCount(planName);
     if (usage > 0) {
-      alert(`Cannot delete package "${planName}" because it is used by ${usage} account(s).\n\nNext steps: Reassign those account(s) to another package, then retry deletion.`);
+      setError(`Cannot delete package "${planName}" because it is used by ${usage} account(s). Reassign those account(s) first.`);
       return;
     }
     if (!confirm(`Delete package "${planName}"? This cannot be undone.`)) {
       return;
     }
+    setDeleting(planName);
+    setError(null);
     const token = window.localStorage.getItem("npanel_access_token");
-    if (!token) return;
+    if (!token) {
+        setDeleting(null);
+        return;
+    }
     try {
       const res = await fetch(`http://127.0.0.1:3000/v1/hosting/plans/${encodeURIComponent(planName)}`, {
         method: "DELETE",
@@ -151,7 +166,9 @@ export default function PackagesPage() {
       }
       setPlans(prev => prev.filter(p => p.name !== planName));
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete package");
+      setError(err instanceof Error ? err.message : "Failed to delete package");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -170,6 +187,13 @@ export default function PackagesPage() {
           Add Package
         </button>
       </div>
+
+      {error && !showCreate && (
+          <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-2 rounded text-sm flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {error}
+          </div>
+      )}
 
       {showCreate && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
@@ -278,15 +302,18 @@ export default function PackagesPage() {
                   <button
                     type="button"
                     onClick={() => setShowCreate(false)}
-                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                    disabled={creating}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium"
+                    disabled={creating}
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                   >
-                    Create Package
+                    {creating && <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white" />}
+                    {creating ? "Creating..." : "Create Package"}
                   </button>
                 </div>
             </form>
@@ -322,10 +349,15 @@ export default function PackagesPage() {
                     <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end">
                         <button 
                             onClick={() => handleDelete(p.name)}
-                            className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                            disabled={deleting === p.name}
+                            className="text-zinc-500 hover:text-red-400 transition-colors p-1 disabled:opacity-50"
                             title="Delete Package"
                         >
-                            <Trash2 className="h-4 w-4" />
+                            {deleting === p.name ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500/20 border-t-red-500" />
+                            ) : (
+                                <Trash2 className="h-4 w-4" />
+                            )}
                         </button>
                     </div>
                 </div>
