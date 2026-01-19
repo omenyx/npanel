@@ -49,15 +49,24 @@ ensure_nodesource_20() {
 }
 
 ensure_services_start() {
-  local svcs=(mysql nginx php8.2-fpm exim4 dovecot bind9)
-  for s in "${svcs[@]}"; do
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl enable "$s" || true
-      systemctl restart "$s" || systemctl start "$s" || true
-    else
-      service "$s" start || true
-    fi
-  done
+  log "Starting services..."
+  service mysql start
+  service nginx start
+  service php8.2-fpm start
+  service exim4 start
+  service dovecot start
+  
+  # Handle DNS Service: Prefer PowerDNS if installed, fallback to Bind9, or warn.
+  if [[ -x /usr/sbin/pdns_server ]]; then
+      log "Starting PowerDNS..."
+      service pdns start || log "Failed to start PowerDNS"
+  else
+      # Attempt to start bind9 only if pdns is not present
+      # The error 'Refusing to operate on alias name' typically means 'bind9' is an alias for 'named'
+      # Try starting 'named' directly if bind9 fails
+      log "Starting Bind9..."
+      service named start || service bind9 start || log "Failed to start DNS service (bind9/named)"
+  fi
 }
 
 mysql_exec() {
@@ -216,6 +225,12 @@ install_dependencies() {
   
   # Fix any broken installs
   DEBIAN_FRONTEND=noninteractive apt-get install -f -y
+
+  # Install PowerDNS (pdns-server and pdns-backend-mysql) explicitly
+  # Note: PowerDNS replaces bind9 for DNS services in standard Npanel deployments,
+  # but we keep bind9-utils/dnsutils if needed. If 'bind9' service is conflicting, disable it.
+  log "Installing PowerDNS"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-mysql || log "PowerDNS install failed, continuing..."
 }
 
 install_npanel_dependencies() {
