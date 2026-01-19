@@ -4,6 +4,8 @@
 # Usage:
 #   chmod +x install_npanel_wsl.sh
 #   sudo ./install_npanel_wsl.sh
+#   # OR
+#   sudo bash install_npanel_wsl.sh
 #
 # Notes:
 # - Run as root in WSL (Ubuntu 22.04)
