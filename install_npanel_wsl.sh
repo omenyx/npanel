@@ -74,13 +74,22 @@ setup_mysql() {
 
 ensure_repo() {
   local dest="/opt/npanel"
-  if [[ -d "$dest" && -f "$dest/backend/package.json" ]]; then
-    log "Repo already present at $dest"
-    return
-  fi
+  
   # Default to omenyx/npanel if REPO_URL is not set
   if [[ -z "${REPO_URL:-}" ]]; then
     REPO_URL="https://github.com/omenyx/npanel.git"
+  fi
+
+  if [[ -d "$dest/.git" ]]; then
+    log "Repo exists at $dest, pulling latest changes..."
+    cd "$dest" || return
+    git pull || log "Git pull failed (possibly dirty state), continuing..."
+    return
+  fi
+
+  if [[ -d "$dest" && -n "$(ls -A "$dest")" ]]; then
+     log "Warning: $dest exists and is not empty. Backing up to $dest.bak.$(date +%s)"
+     mv "$dest" "$dest.bak.$(date +%s)"
   fi
   
   log "Cloning repo from $REPO_URL to $dest"
