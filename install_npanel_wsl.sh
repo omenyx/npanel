@@ -320,19 +320,41 @@ verify_tools() {
 }
 
 configure_nginx() {
-  log "Configuring Nginx reverse proxy (listening on 8080 → backend 3000)"
+  log "Configuring Nginx reverse proxy (listening on 8080)"
   local conf="/etc/nginx/sites-available/npanel.conf"
   cat > "$conf" <<'NGCONF'
 server {
     listen 8080;
     server_name localhost;
 
-    location / {
+    # Backend API
+    location /api {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:3000;
+    }
+
+    # Frontend (Next.js)
+    # Assuming Next.js is running on 3001 or built statically?
+    # V1 Installer assumes we are running a dev/production build via 'npm start' on a different port OR
+    # simply serving static files if exported.
+    # Current installer does 'npm run build' in frontend but doesn't start it.
+    # We need to serve the frontend via Nginx or start it as a service.
+    
+    # FIX: Serve the built static files directly for now, OR proxy to Next.js start
+    # Let's assume we want to serve the static export if 'output: export' is set, 
+    # but standard Next.js requires a running server for SSR.
+    
+    # Update: We will start the frontend on port 3001 in the systemd service or a separate one.
+    # For this fix, let's proxy root to 3000 assuming backend serves frontend? 
+    # NO, backend is NestJS (API). Frontend is Next.js.
+    # We need to start the frontend!
+    
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
     }
 }
 NGCONF
@@ -500,14 +522,20 @@ install_npanel_dependencies() {
 
 setup_systemd_service() {
   if ! command -v systemctl >/dev/null 2>&1; then
-    log "systemd not available; starting backend in background via nohup"
-    nohup bash -lc 'cd /opt/npanel/backend && export $(grep -v "^#" .env | xargs -d"\n") && npm run start:dev' >/var/log/npanel.log 2>&1 &
+    log "systemd not available; starting services via nohup"
+    # Start Backend
+    nohup bash -lc 'cd /opt/npanel/backend && export $(grep -v "^#" .env | xargs -d"\n") && npm run start:dev' >/var/log/npanel-backend.log 2>&1 &
+    # Start Frontend
+    nohup bash -lc 'cd /opt/npanel/frontend && npm start -- -p 3001' >/var/log/npanel-frontend.log 2>&1 &
     return
   fi
-  log "Creating systemd service for Npanel dev"
-  cat > /etc/systemd/system/npanel.service <<'UNIT'
+
+  log "Creating systemd services for Npanel"
+  
+  # Backend Service
+  cat > /etc/systemd/system/npanel-backend.service <<'UNIT'
 [Unit]
-Description=Npanel Backend (dev)
+Description=Npanel Backend
 After=network.target mysql.service
 
 [Service]
@@ -521,9 +549,29 @@ User=root
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+  # Frontend Service
+  cat > /etc/systemd/system/npanel-frontend.service <<'UNIT'
+[Unit]
+Description=Npanel Frontend
+After=network.target npanel-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/npanel/frontend
+ExecStart=/usr/bin/npm start -- -p 3001
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
   systemctl daemon-reload
-  systemctl enable npanel.service || true
-  systemctl restart npanel.service || systemctl start npanel.service
+  systemctl enable npanel-backend.service || true
+  systemctl enable npanel-frontend.service || true
+  systemctl restart npanel-backend.service
+  systemctl restart npanel-frontend.service
 }
 
 verify_deployment() {
@@ -548,10 +596,16 @@ verify_deployment() {
 
   log "Waiting for Nginx/Frontend (port 8080)..."
   if curl -s http://127.0.0.1:8080/admin > /tmp/frontend_check.html; then
+     # Check for Next.js app specific content
      if grep -q "NPanel" /tmp/frontend_check.html || grep -q "Login" /tmp/frontend_check.html || grep -q "next" /tmp/frontend_check.html; then
         log "Frontend is reachable via Nginx."
      else
-        err "Frontend reachable but content mismatch. Check /tmp/frontend_check.html"
+        # It might be returning a JSON 404 from backend if Nginx routing is wrong
+        if grep -q "Cannot GET" /tmp/frontend_check.html; then
+             err "Frontend verification failed: Received Backend 404 instead of Frontend app. Check Nginx routing."
+        else
+             err "Frontend reachable but content mismatch. Check /tmp/frontend_check.html"
+        fi
         return 1
      fi
   else
