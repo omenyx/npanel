@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { HostingServiceEntity } from './hosting-service.entity';
 import { HostingService } from './hosting.service';
 import { HostingController } from './hosting.controller';
+import { DnsController } from './dns.controller';
 import { CustomerHostingController } from './customer-hosting.controller';
 import { HostingPlansController } from './hosting-plans.controller';
 import { SystemController } from '../system/system.controller';
@@ -96,6 +97,7 @@ import { HostingCredentialsService } from './hosting-credentials.service';
   ],
   controllers: [
     HostingController,
+    DnsController,
     CustomerHostingController,
     HostingPlansController,
     SystemController,

@@ -11,6 +11,7 @@ import {
   Activity,
   LogOut,
   Menu,
+  Globe,
 } from "lucide-react";
 
 export default function AdminLayout({
@@ -68,6 +69,11 @@ export default function AdminLayout({
       label: "Transfers",
       href: "/admin/transfers",
       icon: ArrowRightLeft,
+    },
+    {
+      label: "DNS",
+      href: "/admin/dns",
+      icon: Globe,
     },
     {
       label: "Logs / Status",

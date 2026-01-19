@@ -170,6 +170,9 @@ export interface DnsAdapter {
     context: AdapterContext,
     zoneName: string,
   ): Promise<DnsRecordSpec[]>;
+  listZones(
+    context: AdapterContext,
+  ): Promise<string[]>;
 }
 
 export interface MailAdapter {
@@ -490,6 +493,10 @@ export class NoopDnsAdapter implements DnsAdapter {
       { name: 'www', type: 'CNAME', data: zoneName },
       { name: '@', type: 'MX', data: `10 ${zoneName}` },
     ];
+  }
+
+  async listZones(context: AdapterContext): Promise<string[]> {
+    return ['example.com', 'test.com'];
   }
 }
 

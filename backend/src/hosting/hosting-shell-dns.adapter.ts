@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type {
   AdapterContext,
@@ -248,6 +248,8 @@ export class ShellDnsAdapter implements DnsAdapter {
         throw err;
       }
       const baseArgs = getArgsFromEnv('NPANEL_POWERDNS_PDNSUTIL', []);
+      
+      // Ensure zone exists
       const listResult = await execCommand(pdnsPath, [
         ...baseArgs,
         'list-zone',
@@ -283,48 +285,39 @@ export class ShellDnsAdapter implements DnsAdapter {
           throw new Error('dns_powerdns_zone_create_failed');
         }
       }
-      const entries = spec.records;
-      for (const record of entries) {
-        const recordArgs = buildPowerDnsRecord(spec.zoneName, record);
-        if (!recordArgs) {
-          continue;
-        }
-        const recordResult = await execCommand(pdnsPath, [
-          ...baseArgs,
-          'add-record',
-          spec.zoneName,
-          recordArgs.name,
-          recordArgs.type,
-          String(recordArgs.ttl),
-          recordArgs.data,
-        ]);
-        if (recordResult.code !== 0) {
-          await context.log({
-            adapter: 'dns_shell',
-            operation: 'create',
-            targetKind: 'dns_zone',
-            targetKey: spec.zoneName,
-            success: false,
-            dryRun: false,
-            details: {
-              backend,
-              command: pdnsPath,
-              args: [
-                ...baseArgs,
-                'add-record',
-                spec.zoneName,
-                recordArgs.name,
-                recordArgs.type,
-                String(recordArgs.ttl),
-                recordArgs.data,
-              ],
-              stdout: recordResult.stdout,
-              stderr: recordResult.stderr,
-            },
-            errorMessage: 'dns_powerdns_add_record_failed',
-          });
-          throw new Error('dns_powerdns_add_record_failed');
-        }
+
+      // Use load-zone to sync records
+      const zoneContent = buildBindZoneFile(spec.zoneName, spec.records);
+      const tmpFile = join('/tmp', `npanel-dns-${spec.zoneName}-${Date.now()}.zone`);
+      await writeFile(tmpFile, zoneContent, { mode: 0o644 });
+
+      const loadResult = await execCommand(pdnsPath, [
+        ...baseArgs,
+        'load-zone',
+        spec.zoneName,
+        tmpFile,
+      ]);
+
+      await unlink(tmpFile).catch(() => {});
+
+      if (loadResult.code !== 0) {
+        await context.log({
+          adapter: 'dns_shell',
+          operation: 'create',
+          targetKind: 'dns_zone',
+          targetKey: spec.zoneName,
+          success: false,
+          dryRun: false,
+          details: {
+            backend,
+            command: pdnsPath,
+            args: [...baseArgs, 'load-zone', spec.zoneName, tmpFile],
+            stdout: loadResult.stdout,
+            stderr: loadResult.stderr,
+          },
+          errorMessage: 'dns_powerdns_load_zone_failed',
+        });
+        throw new Error('dns_powerdns_load_zone_failed');
       }
     } else {
       await context.log({
@@ -572,6 +565,37 @@ export class ShellDnsAdapter implements DnsAdapter {
         });
       }
       return records;
+    }
+    return [];
+  }
+
+  async listZones(context: AdapterContext): Promise<string[]> {
+    const backend = getDnsBackendName();
+    if (!backend) {
+      return [];
+    }
+    if (backend === 'powerdns') {
+      const pdnsBin = process.env.NPANEL_POWERDNS_PDNSUTIL_CMD || 'pdnsutil';
+      const pdnsPath = await this.tools.resolve(pdnsBin);
+      const baseArgs = getArgsFromEnv('NPANEL_POWERDNS_PDNSUTIL', []);
+      const result = await execCommand(pdnsPath, [...baseArgs, 'list-all-zones']);
+      if (result.code !== 0) {
+        return [];
+      }
+      return result.stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    } else if (backend === 'bind') {
+      const zoneRoot = process.env.NPANEL_BIND_ZONE_ROOT || '/etc/named';
+      try {
+        const files = await readdir(zoneRoot);
+        return files
+          .filter((f) => f.endsWith('.zone'))
+          .map((f) => f.substring(0, f.length - 5));
+      } catch {
+        return [];
+      }
     }
     return [];
   }
