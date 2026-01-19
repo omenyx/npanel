@@ -9,6 +9,7 @@ import { MigrationController } from './migration.controller';
 import { CustomerMigrationController } from './customer-migration.controller';
 import { SystemModule } from '../system/system.module';
 import { HostingModule } from '../hosting/hosting.module';
+import { AccountsModule } from '../accounts/accounts.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { HostingModule } from '../hosting/hosting.module';
     ]),
     SystemModule,
     HostingModule,
+    AccountsModule,
   ],
   controllers: [MigrationController, CustomerMigrationController],
   providers: [MigrationService],
