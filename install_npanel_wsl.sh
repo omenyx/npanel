@@ -190,6 +190,9 @@ install_dependencies() {
   log "Adding Ondrej PHP PPA"
   LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
   
+  # Update apt cache again after adding PPA
+  DEBIAN_FRONTEND=noninteractive apt-get update -y
+
   ensure_nodesource_20
   apt_install npm mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential
 }
