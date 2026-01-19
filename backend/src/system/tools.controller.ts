@@ -2,10 +2,35 @@ import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpSt
 import { ToolResolver } from './tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+function parseAllowedServicesFromEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function sanitizeServiceName(value: string): string {
+  if (!/^[a-zA-Z0-9@._-]+$/.test(value)) {
+    throw new BadRequestException('invalid_service_name');
+  }
+  return value;
+}
+
+function normalizeServiceName(value: string): string {
+  const service = sanitizeServiceName(value);
+  if (service === 'php-fpm') return 'php8.2-fpm';
+  if (service === 'pdns_server') return 'pdns';
+  if (service === 'pdns-server') return 'pdns';
+  if (service === 'sshd') return 'ssh';
+  return service;
+}
 
 @Controller('system/tools')
 export class ToolsController {
@@ -97,6 +122,8 @@ export class ToolsController {
     const allowedServices = [
       'nginx',
       'php8.2-fpm', // Adjust based on actual service name
+      'php8.1-fpm',
+      'php8.3-fpm',
       'php-fpm',
       'mysql',
       'mariadb',
@@ -104,34 +131,57 @@ export class ToolsController {
       'pdns-server',
       'pdns_server',
       'exim4',
+      'postfix',
       'dovecot',
+      'dovecot-imapd',
+      'dovecot-pop3d',
+      'rspamd',
       'ssh',
       'sshd',
       'npanel-backend',
+      'npanel-frontend',
+      'redis',
+      'redis-server',
+      'fail2ban',
+      'ufw',
+      'cron',
+      'crond',
+      'bind9',
+      'named',
     ];
+    const envAllowed = parseAllowedServicesFromEnv(
+      process.env.NPANEL_ALLOWED_RESTART_SERVICES,
+    );
+    const allowedSet = new Set<string>([...allowedServices, ...envAllowed]);
+    const requestedService = sanitizeServiceName(service);
 
-    if (!allowedServices.includes(service)) {
-      throw new BadRequestException(`Service '${service}' is not allowed to be restarted via this endpoint.`);
+    if (!allowedSet.has(requestedService)) {
+      throw new BadRequestException(
+        `Service '${requestedService}' is not allowed to be restarted via this endpoint.`,
+      );
     }
 
-    // Map friendly names to actual systemd service names if needed
-    let serviceName = service;
-    if (service === 'php-fpm') serviceName = 'php8.2-fpm'; // Default to 8.2 or detect
-    if (service === 'mysql') serviceName = 'mysql';
-    if (service === 'pdns_server') serviceName = 'pdns';
+    const serviceName = normalizeServiceName(requestedService);
 
     try {
-      // In a real environment, this might need sudo. 
-      // Assuming the process runs as root or has sudoers NOPASSWD for systemctl.
-      // For WSL, we might need 'wsl -u root' if running from outside, but this code runs INSIDE the backend.
-      // If backend runs as root (common in simple VPS panels), this works.
-      await execAsync(`systemctl restart ${serviceName}`);
+      await execFileAsync('systemctl', ['restart', serviceName]);
       return { success: true, message: `Service ${serviceName} restarted.` };
     } catch (error) {
-      throw new HttpException(
-        `Failed to restart service ${serviceName}: ${error instanceof Error ? error.message : error}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      try {
+        await execFileAsync('service', [serviceName, 'restart']);
+        return { success: true, message: `Service ${serviceName} restarted.` };
+      } catch (secondError) {
+        const message =
+          secondError instanceof Error
+            ? secondError.message
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        throw new HttpException(
+          `Failed to restart service ${serviceName}: ${message}`,
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
     }
   }
 }
