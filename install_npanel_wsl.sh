@@ -508,8 +508,8 @@ verify_deployment() {
     if [[ $retries -gt $max_retries ]]; then
        err "Backend failed to start on port 3000."
        log "Checking logs..."
-       if [[ -f /var/log/npanel.log ]]; then tail -n 20 /var/log/npanel.log; fi
-       if command -v journalctl >/dev/null; then journalctl -u npanel -n 20 --no-pager; fi
+       if [[ -f /var/log/npanel.log ]]; then tail -n 50 /var/log/npanel.log; fi
+       if command -v journalctl >/dev/null; then journalctl -u npanel -n 50 --no-pager; fi
        return 1
     fi
     sleep 3
