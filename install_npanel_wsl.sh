@@ -242,10 +242,11 @@ ensure_repo() {
     git config --global --add safe.directory "$dest"
 
     if [[ "$1" == "--update" ]]; then
-        log "Update flag set. Pulling latest changes..."
+        log "Update flag set. Syncing to origin/main..."
         cd "$dest" || return
-        git reset --hard origin/main || true
-        git pull || log "Git pull failed, continuing..."
+        git fetch origin
+        git reset --hard origin/main
+        git clean -fd
         return
     else
         log "Repo exists at $dest. Use --update to force pull."
@@ -270,6 +271,10 @@ generate_jwt_secret() {
 write_env() {
   local dest="/opt/npanel/backend/.env"
   log "Writing .env to $dest"
+  if [[ -f "$dest" ]]; then
+    log ".env already exists, skipping."
+    return
+  fi
   local jwt; jwt=$(generate_jwt_secret)
   cat > "$dest" <<EOF
 NODE_ENV=development
@@ -279,6 +284,7 @@ JWT_SECRET=$jwt
 
 NPANEL_HOSTING_DRY_RUN=0
 NPANEL_FIXED_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+NPANEL_ALLOWED_RESTART_SERVICES=
 
 # Tool commands (REAL OS BINARIES ONLY)
 NPANEL_USERADD_CMD=/usr/sbin/useradd
@@ -328,6 +334,10 @@ verify_tools() {
 configure_nginx() {
   log "Configuring Nginx reverse proxy (listening on 8080)"
   local conf="/etc/nginx/sites-available/npanel.conf"
+  if [[ -f "$conf" ]]; then
+    log "Nginx config already exists at $conf, skipping."
+    return
+  fi
   cat > "$conf" <<'NGCONF'
 server {
     listen 8080;
@@ -535,6 +545,13 @@ install_npanel_dependencies() {
 setup_systemd_service() {
   if ! command -v systemctl >/dev/null 2>&1; then
     log "systemd not available; starting services via nohup"
+    if command -v lsof >/dev/null 2>&1; then
+      local pids
+      pids=$(lsof -ti :3000 2>/dev/null || true)
+      if [[ -n "${pids}" ]]; then kill ${pids} 2>/dev/null || true; fi
+      pids=$(lsof -ti :3001 2>/dev/null || true)
+      if [[ -n "${pids}" ]]; then kill ${pids} 2>/dev/null || true; fi
+    fi
     # Start Backend
     nohup bash -lc 'cd /opt/npanel/backend && export $(grep -v "^#" .env | xargs -d"\n") && npm run start:dev' >/var/log/npanel-backend.log 2>&1 &
     # Start Frontend
@@ -554,7 +571,7 @@ After=network.target mysql.service
 Type=simple
 WorkingDirectory=/opt/npanel/backend
 EnvironmentFile=/opt/npanel/backend/.env
-ExecStart=/usr/bin/npm run start:dev
+ExecStart=/usr/bin/npm run start:prod
 Restart=always
 User=root
 StandardOutput=append:/var/log/npanel-backend.log
@@ -602,7 +619,7 @@ verify_deployment() {
        err "Backend failed to start on port 3000."
        log "Checking logs..."
        if [[ -f /var/log/npanel.log ]]; then tail -n 50 /var/log/npanel.log; fi
-       if command -v journalctl >/dev/null; then journalctl -u npanel -n 50 --no-pager; fi
+       if command -v journalctl >/dev/null; then journalctl -u npanel-backend -n 50 --no-pager; fi
        return 1
     fi
     sleep 3
@@ -662,18 +679,25 @@ final_message() {
 
 main() {
   log "Starting Npanel WSL Installer..."
+  local mode="${1:-}"
   check_compatibility
   require_root
-  disable_selinux
-  check_ports
-  install_dependencies
-  ensure_services_start
-  setup_mysql
-  ensure_repo "${1:-}"
+  if [[ "$mode" != "--update" ]]; then
+    disable_selinux
+    check_ports
+  fi
+  if [[ "$mode" != "--update" ]]; then
+    install_dependencies
+    ensure_services_start
+    setup_mysql
+  fi
+  ensure_repo "$mode"
   install_npanel_dependencies
   write_env
   verify_tools
-  configure_nginx
+  if [[ "$mode" != "--update" ]]; then
+    configure_nginx
+  fi
   setup_systemd_service
   verify_deployment
   final_message
