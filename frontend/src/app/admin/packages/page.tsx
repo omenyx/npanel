@@ -106,6 +106,12 @@ export default function PackagesPage() {
     return services.filter(s => (s.planName || 'basic') === planName).length;
   };
 
+  const formatLimit = (val: number, unit?: string) => {
+    if (val === -1) return "Unlimited";
+    if (val === 0 && unit === "MB") return "Unlimited";
+    return unit ? `${val} ${unit}` : val;
+  };
+
   const handleDelete = async (planName: string) => {
     const usage = getUsageCount(planName);
     if (usage > 0) {
@@ -169,12 +175,13 @@ export default function PackagesPage() {
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1">Disk Quota (MB)</label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
                       value={newPlanDisk}
                       onChange={(e) => setNewPlanDisk(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
                       required
                     />
+                    <p className="text-[10px] text-zinc-600 mt-1">Set to 0 for unlimited</p>
                   </div>
 
                   <div>
@@ -195,24 +202,26 @@ export default function PackagesPage() {
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max Databases</label>
                     <input
                       type="number"
-                      min="0"
+                      min="-1"
                       value={newPlanMaxDbs}
                       onChange={(e) => setNewPlanMaxDbs(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
                       required
                     />
+                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
                   </div>
 
                   <div>
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max FTP Accounts</label>
                     <input
                       type="number"
-                      min="0"
+                      min="-1"
                       value={newPlanMaxFtp}
                       onChange={(e) => setNewPlanMaxFtp(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
                       required
                     />
+                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
                   </div>
 
                   <div>
@@ -225,18 +234,20 @@ export default function PackagesPage() {
                       className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
                       required
                     />
+                    <p className="text-[10px] text-zinc-600 mt-1">Set to 0 for unlimited</p>
                   </div>
 
                   <div>
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1">Max Mailboxes</label>
                     <input
                       type="number"
-                      min="0"
+                      min="-1"
                       value={newPlanMaxMailboxes}
                       onChange={(e) => setNewPlanMaxMailboxes(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
                       required
                     />
+                    <p className="text-[10px] text-zinc-600 mt-1">Set to -1 for unlimited</p>
                   </div>
                 </div>
 
@@ -278,11 +289,11 @@ export default function PackagesPage() {
                             )}
                         </div>
                         <div className="space-y-1 text-sm text-zinc-400">
-                            <div className="flex justify-between"><span>Disk:</span> <span className="text-zinc-200">{p.diskQuotaMb} MB</span></div>
+                            <div className="flex justify-between"><span>Disk:</span> <span className="text-zinc-200">{formatLimit(p.diskQuotaMb, "MB")}</span></div>
                             <div className="flex justify-between"><span>PHP:</span> <span className="text-zinc-200">{p.phpVersion}</span></div>
-                            <div className="flex justify-between"><span>DBs:</span> <span className="text-zinc-200">{p.maxDatabases}</span></div>
-                            <div className="flex justify-between"><span>Mail:</span> <span className="text-zinc-200">{p.maxMailboxes} ({p.mailboxQuotaMb} MB)</span></div>
-                            <div className="flex justify-between"><span>FTP:</span> <span className="text-zinc-200">{p.maxFtpAccounts}</span></div>
+                            <div className="flex justify-between"><span>DBs:</span> <span className="text-zinc-200">{formatLimit(p.maxDatabases)}</span></div>
+                            <div className="flex justify-between"><span>Mail:</span> <span className="text-zinc-200">{formatLimit(p.maxMailboxes)} ({p.mailboxQuotaMb} MB)</span></div>
+                            <div className="flex justify-between"><span>FTP:</span> <span className="text-zinc-200">{formatLimit(p.maxFtpAccounts)}</span></div>
                         </div>
                     </div>
                     <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end">

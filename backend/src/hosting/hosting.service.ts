@@ -197,19 +197,19 @@ export class HostingService implements OnModuleInit {
     }
 
     // Minimal validation of plan constraints for initial provisioning
-    if (plan.maxMailboxes < 1) {
+    if (plan.maxMailboxes === 0) {
       throw new BadRequestException(
         `Plan '${plan.name}' does not allow mailboxes (limit: ${plan.maxMailboxes})`,
       );
     }
-    if (plan.maxFtpAccounts < 1) {
+    if (plan.maxFtpAccounts === 0) {
       throw new BadRequestException(
         `Plan '${plan.name}' does not allow FTP accounts (limit: ${plan.maxFtpAccounts})`,
       );
     }
-    if (plan.diskQuotaMb <= 0) {
+    if (plan.diskQuotaMb < 0) {
       throw new BadRequestException(
-        `Plan '${plan.name}' has invalid disk quota (must be > 0)`,
+        `Plan '${plan.name}' has invalid disk quota (must be >= 0)`,
       );
     }
     const supportedPhp = ['7.4', '8.0', '8.1', '8.2', '8.3'];

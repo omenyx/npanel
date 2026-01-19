@@ -6,12 +6,12 @@ export class CreateHostingPlanDto {
   name: string;
 
   @IsInt()
-  @Min(1)
+  @Min(0)
   @IsOptional()
   diskQuotaMb?: number;
 
   @IsInt()
-  @Min(0)
+  @Min(-1)
   @IsOptional()
   maxDatabases?: number;
 
@@ -25,12 +25,12 @@ export class CreateHostingPlanDto {
   mailboxQuotaMb?: number;
 
   @IsInt()
-  @Min(0)
+  @Min(-1)
   @IsOptional()
   maxMailboxes?: number;
 
   @IsInt()
-  @Min(0)
+  @Min(-1)
   @IsOptional()
   maxFtpAccounts?: number;
 }
