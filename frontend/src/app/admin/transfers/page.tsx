@@ -23,7 +23,11 @@ export default function TransfersPage() {
   const [formData, setFormData] = useState({
     name: "",
     sourceHost: "",
+    sourcePort: 22,
     sourceUser: "root",
+    authMethod: "system", // system, password, key
+    sourcePassword: "",
+    sourceKey: "",
     sourceUsername: "", // cPanel account user
     sourceDomain: "",   // cPanel account domain
     dryRun: true
@@ -96,7 +100,10 @@ export default function TransfersPage() {
                 sourceType: "cpanel_live_ssh",
                 sourceConfig: {
                     host: formData.sourceHost,
-                    sshUser: formData.sourceUser
+                    sshUser: formData.sourceUser,
+                    sshPort: Number(formData.sourcePort),
+                    sshPassword: formData.authMethod === 'password' ? formData.sourcePassword : undefined,
+                    sshKey: formData.authMethod === 'key' ? formData.sourceKey : undefined
                 },
                 dryRun: formData.dryRun
             }),
@@ -133,7 +140,11 @@ export default function TransfersPage() {
         setFormData({
             name: "",
             sourceHost: "",
+            sourcePort: 22,
             sourceUser: "root",
+            authMethod: "system",
+            sourcePassword: "",
+            sourceKey: "",
             sourceUsername: "",
             sourceDomain: "",
             dryRun: true
@@ -205,7 +216,7 @@ export default function TransfersPage() {
                             required
                         />
                     </div>
-                     <div>
+                    <div>
                         <label className="block text-xs uppercase text-zinc-500 mb-1">Source Host (IP)</label>
                         <input
                             type="text"
@@ -217,23 +228,103 @@ export default function TransfersPage() {
                         />
                     </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-xs uppercase text-zinc-500 mb-1">SSH User</label>
+                        <input
+                            type="text"
+                            placeholder="root"
+                            value={formData.sourceUser}
+                            onChange={(e) => setFormData({...formData, sourceUser: e.target.value})}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs uppercase text-zinc-500 mb-1">SSH Port</label>
+                        <input
+                            type="number"
+                            placeholder="22"
+                            value={formData.sourcePort}
+                            onChange={(e) => setFormData({...formData, sourcePort: parseInt(e.target.value) || 22})}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                        />
+                    </div>
+                </div>
+
                 <div>
-                    <label className="block text-xs uppercase text-zinc-500 mb-1">SSH User</label>
-                    <input
-                        type="text"
-                        placeholder="root"
-                        value={formData.sourceUser}
-                        onChange={(e) => setFormData({...formData, sourceUser: e.target.value})}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
-                        required
-                    />
-                    <p className="text-[10px] text-zinc-600 mt-1">
-                        Ensure local SSH key is authorized on source host for this user.
-                    </p>
+                    <label className="block text-xs uppercase text-zinc-500 mb-2">Authentication Method</label>
+                    <div className="flex gap-4 mb-2">
+                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                            <input 
+                                type="radio" 
+                                name="authMethod"
+                                value="system"
+                                checked={formData.authMethod === 'system'}
+                                onChange={() => setFormData({...formData, authMethod: 'system'})}
+                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                            />
+                            System Key
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                            <input 
+                                type="radio" 
+                                name="authMethod"
+                                value="password"
+                                checked={formData.authMethod === 'password'}
+                                onChange={() => setFormData({...formData, authMethod: 'password'})}
+                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                            />
+                            Password
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none">
+                            <input 
+                                type="radio" 
+                                name="authMethod"
+                                value="key"
+                                checked={formData.authMethod === 'key'}
+                                onChange={() => setFormData({...formData, authMethod: 'key'})}
+                                className="bg-zinc-950 border-zinc-800 text-blue-600 focus:ring-blue-500"
+                            />
+                            Private Key
+                        </label>
+                    </div>
+
+                    {formData.authMethod === 'system' && (
+                        <p className="text-[10px] text-zinc-600">
+                            Ensure local SSH key is authorized on source host for this user.
+                        </p>
+                    )}
+
+                    {formData.authMethod === 'password' && (
+                        <div className="mt-2">
+                            <label className="block text-xs uppercase text-zinc-500 mb-1">SSH Password</label>
+                            <input
+                                type="password"
+                                value={formData.sourcePassword}
+                                onChange={(e) => setFormData({...formData, sourcePassword: e.target.value})}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500"
+                                placeholder="Password"
+                            />
+                        </div>
+                    )}
+
+                    {formData.authMethod === 'key' && (
+                        <div className="mt-2">
+                            <label className="block text-xs uppercase text-zinc-500 mb-1">Private Key</label>
+                            <textarea
+                                value={formData.sourceKey}
+                                onChange={(e) => setFormData({...formData, sourceKey: e.target.value})}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 font-mono text-xs h-32"
+                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                            />
+                        </div>
+                    )}
                 </div>
               </div>
               
-              {sshKey && (
+              {sshKey && formData.authMethod === 'system' && (
                 <div className="bg-zinc-950 border border-zinc-800 rounded p-3 mt-4">
                     <label className="block text-[10px] uppercase text-zinc-500 mb-1 font-semibold">System Public Key</label>
                     <p className="text-[10px] text-zinc-500 mb-2">

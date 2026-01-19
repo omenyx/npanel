@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpStatus, Query } from '@nestjs/common';
 import { ToolResolver } from './tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
 import * as os from 'os';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
+import { stat } from 'fs/promises';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -182,6 +183,46 @@ export class ToolsController {
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
+    }
+  }
+
+  @Get('logs/files')
+  async getLogFiles() {
+    const candidates = [
+      '/var/log/syslog',
+      '/var/log/auth.log',
+      '/var/log/nginx/access.log',
+      '/var/log/nginx/error.log',
+      '/var/log/mysql/error.log',
+      '/var/log/exim4/mainlog',
+      '/var/log/npanel-backend.log',
+      '/var/log/npanel-frontend.log',
+      '/var/log/npanel.log',
+    ];
+    const available: string[] = [];
+    for (const p of candidates) {
+      try {
+        const s = await stat(p);
+        if (s.isFile()) available.push(p);
+      } catch {}
+    }
+    return { files: available };
+  }
+
+  @Get('logs/content')
+  async getLogContent(@Query('path') path: string) {
+    if (!path || !path.startsWith('/var/log/') || path.includes('..')) {
+      throw new BadRequestException('Invalid log path');
+    }
+    try {
+      // Use tail to get last 200 lines
+      const { stdout } = await execFileAsync('tail', ['-n', '200', path]);
+      return { content: stdout };
+    } catch (e) {
+      throw new HttpException(
+        `Failed to read log: ${e instanceof Error ? e.message : e}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }
