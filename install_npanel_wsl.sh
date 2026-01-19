@@ -305,7 +305,16 @@ install_npanel_dependencies() {
   popd >/dev/null || true
 
   # Fix permissions for Npanel
-  chown -R $SUDO_USER:$SUDO_USER /opt/npanel
+  # Use SUDO_USER if available, otherwise fallback to current user (likely root) or find the first regular user
+  local owner="${SUDO_USER:-$USER}"
+  if [[ "$owner" == "root" ]]; then
+     # Try to find the first non-root user in /home
+     owner=$(ls /home | head -n 1)
+     if [[ -z "$owner" ]]; then owner="root"; fi
+  fi
+  
+  log "Setting ownership of /opt/npanel to $owner"
+  chown -R "$owner":"$owner" /opt/npanel
   
   # Install Roundcube (Download only, manual config required in V1)
   if [[ ! -d "/var/www/roundcube" ]]; then
