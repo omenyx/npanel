@@ -494,6 +494,35 @@ UNIT
   systemctl restart npanel.service || systemctl start npanel.service
 }
 
+verify_deployment() {
+  log "Verifying deployment..."
+  local retries=0
+  local max_retries=10
+  
+  log "Waiting for Backend (port 3000)..."
+  until curl -s http://127.0.0.1:3000/system/tools/status >/dev/null; do
+    retries=$((retries+1))
+    if [[ $retries -gt $max_retries ]]; then
+       err "Backend failed to start on port 3000."
+       log "Checking logs..."
+       if [[ -f /var/log/npanel.log ]]; then tail -n 20 /var/log/npanel.log; fi
+       if command -v journalctl >/dev/null; then journalctl -u npanel -n 20 --no-pager; fi
+       return 1
+    fi
+    sleep 3
+    echo -n "."
+  done
+  echo " OK"
+
+  log "Waiting for Nginx/Frontend (port 8080)..."
+  if curl -s http://127.0.0.1:8080/admin | grep -q "NPanel"; then
+     log "Frontend is reachable via Nginx."
+  else
+     err "Frontend verification failed (http://localhost:8080/admin)."
+     return 1
+  fi
+}
+
 final_message() {
   echo
   log "Npanel is running at:"
@@ -520,6 +549,7 @@ main() {
   verify_tools
   configure_nginx
   setup_systemd_service
+  verify_deployment
   final_message
 }
 
