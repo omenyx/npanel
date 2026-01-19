@@ -200,6 +200,52 @@ NGCONF
   fi
 }
 
+check_compatibility() {
+  log "Checking OS compatibility..."
+  if [[ ! -f /etc/os-release ]]; then
+    die "Cannot determine OS. Only Ubuntu 20.04/22.04/24.04 are supported."
+  fi
+  
+  source /etc/os-release
+  if [[ "$ID" != "ubuntu" ]]; then
+    die "Detected OS: $ID. Only Ubuntu is supported."
+  fi
+  
+  # Check for WSL
+  if grep -qEi "(Microsoft|WSL)" /proc/version; then
+    log "WSL environment detected."
+  else
+    log "Note: Not running in WSL. This script is optimized for WSL but should work on standard Ubuntu."
+  fi
+}
+
+check_ports() {
+  log "Checking for port conflicts..."
+  local conflict=0
+  
+  # Check port 80 (Nginx)
+  if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null ; then
+    log "Warning: Port 80 is in use. Nginx might fail to start."
+    conflict=1
+  fi
+  
+  # Check port 3306 (MySQL)
+  if lsof -Pi :3306 -sTCP:LISTEN -t >/dev/null ; then
+     # It might be our own mysql, which is fine
+     if ! pgrep mysqld >/dev/null; then
+        log "Warning: Port 3306 is in use but mysqld is not running (docker?). MySQL might fail."
+        conflict=1
+     fi
+  fi
+  
+  if [[ $conflict -eq 1 ]]; then
+     log "Attempting to stop conflicting services..."
+     service apache2 stop 2>/dev/null || true
+     service nginx stop 2>/dev/null || true
+     service mysql stop 2>/dev/null || true
+  fi
+}
+
 install_dependencies() {
   log "Installing system dependencies"
   
@@ -221,7 +267,8 @@ install_dependencies() {
   # Note: bind9 might fail to start in WSL2 due to systemd issues, ignoring failure
   # Remove 'npm' from apt install because NodeSource nodejs package already includes npm
   # Add Roundcube dependencies (php-mysql, php-mbstring, php-xml, php-intl, php-zip, php-gd)
-  DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server nginx php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
+  # Added lsof for port checking
+  DEBIAN_FRONTEND=noninteractive apt-get install -y lsof mysql-server nginx php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
   
   # Fix any broken installs
   DEBIAN_FRONTEND=noninteractive apt-get install -f -y
@@ -300,7 +347,10 @@ final_message() {
 }
 
 main() {
+  log "Starting Npanel WSL Installer..."
+  check_compatibility
   require_root
+  check_ports
   install_dependencies
   ensure_services_start
   setup_mysql
