@@ -61,6 +61,13 @@ ensure_services_start() {
       log "Starting PowerDNS (and disabling bind9 to avoid conflict)..."
       systemctl disable bind9 --now 2>/dev/null || service bind9 stop 2>/dev/null || true
       systemctl disable named --now 2>/dev/null || service named stop 2>/dev/null || true
+      
+      # Ensure config file permissions are correct for pdns user
+      if [[ -f /etc/powerdns/pdns.d/pdns.local.gmysql.conf ]]; then
+          chown pdns:pdns /etc/powerdns/pdns.d/pdns.local.gmysql.conf
+          chmod 640 /etc/powerdns/pdns.d/pdns.local.gmysql.conf
+      fi
+      
       service pdns start || log "Failed to start PowerDNS"
   else
       # Attempt to start bind9 only if pdns is not present
@@ -391,7 +398,10 @@ install_dependencies() {
   log "Installing system dependencies"
   
   # Clean up potential conflicting packages from previous failed runs (common in Ubuntu 24.04)
-  DEBIAN_FRONTEND=noninteractive apt-get remove -y libnode-dev npm nodejs-doc || true
+  # Only remove if they exist to avoid errors
+  if dpkg -l | grep -q libnode-dev; then DEBIAN_FRONTEND=noninteractive apt-get remove -y libnode-dev || true; fi
+  if dpkg -l | grep -q npm; then DEBIAN_FRONTEND=noninteractive apt-get remove -y npm || true; fi
+  if dpkg -l | grep -q nodejs-doc; then DEBIAN_FRONTEND=noninteractive apt-get remove -y nodejs-doc || true; fi
   DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
   
   apt_install curl ca-certificates lsb-release gnupg software-properties-common
