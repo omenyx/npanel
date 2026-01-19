@@ -214,4 +214,86 @@ export class ShellMailAdapter implements MailAdapter {
     });
     return {};
   }
+
+  async updatePassword(
+    context: AdapterContext,
+    address: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    if (!context.dryRun) {
+      const mailBin = process.env.NPANEL_MAIL_CMD;
+      if (!mailBin) throw new Error('mail_command_not_configured');
+      
+      let command: string;
+      try {
+        command = await this.tools.resolve(mailBin);
+      } catch (err) {
+        // Log error and rethrow (simplified for brevity, matching pattern)
+        throw err;
+      }
+
+      const args = getArgsFromEnv('NPANEL_MAIL', []);
+      const cliArgs: string[] = [...args, 'passwd', address, password];
+      
+      const result = await execCommand(command, cliArgs);
+      if (result.code !== 0) {
+        await context.log({
+          adapter: 'mail_shell',
+          operation: 'update',
+          targetKind: 'mailbox',
+          targetKey: address,
+          success: false,
+          dryRun: false,
+          details: { stderr: result.stderr },
+          errorMessage: 'mailbox_passwd_failed',
+        });
+        throw new Error('mailbox_passwd_failed');
+      }
+    }
+    await context.log({
+      adapter: 'mail_shell',
+      operation: 'update',
+      targetKind: 'mailbox',
+      targetKey: address,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_change' },
+      errorMessage: null,
+    });
+    return {};
+  }
+
+  async listMailboxes(
+    context: AdapterContext,
+    domain: string,
+  ): Promise<string[]> {
+    // List operations are read-only and typically don't log to the audit trail unless failed
+    const mailBin = process.env.NPANEL_MAIL_CMD;
+    if (!mailBin) return []; // Or throw
+
+    let command: string;
+    try {
+      command = await this.tools.resolve(mailBin);
+    } catch {
+      return [];
+    }
+
+    const args = getArgsFromEnv('NPANEL_MAIL', []);
+    const cliArgs: string[] = [...args, 'list', domain];
+    
+    // In dry-run, we might just return mock data or empty
+    if (context.dryRun) {
+        return [`postmaster@${domain}`, `test@${domain}`];
+    }
+
+    const result = await execCommand(command, cliArgs);
+    if (result.code !== 0) {
+      return [];
+    }
+
+    return result.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
 }

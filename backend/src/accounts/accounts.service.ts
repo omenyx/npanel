@@ -16,6 +16,10 @@ export class AccountsService {
     return this.customers.find({ order: { createdAt: 'DESC' } });
   }
 
+  async findByOwnerUserId(userId: string): Promise<Customer | null> {
+    return this.customers.findOne({ where: { ownerUserId: userId } });
+  }
+
   async create(
     ownerUserId: string,
     input: CreateCustomerDto,

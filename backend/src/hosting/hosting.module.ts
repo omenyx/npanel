@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { HostingServiceEntity } from './hosting-service.entity';
 import { HostingService } from './hosting.service';
 import { HostingController } from './hosting.controller';
+import { CustomerHostingController } from './customer-hosting.controller';
 import { HostingPlansController } from './hosting-plans.controller';
 import { SystemController } from '../system/system.controller';
 import { AccountsModule } from '../accounts/accounts.module';
@@ -93,7 +94,12 @@ import { HostingCredentialsService } from './hosting-credentials.service';
           : NoopFtpAdapter,
     },
   ],
-  controllers: [HostingController, HostingPlansController, SystemController],
+  controllers: [
+    HostingController,
+    CustomerHostingController,
+    HostingPlansController,
+    SystemController,
+  ],
   exports: [HostingService],
 })
 export class HostingModule {}

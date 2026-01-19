@@ -103,6 +103,13 @@ export class HostingService implements OnModuleInit {
     return this.services.find({ order: { createdAt: 'DESC' } });
   }
 
+  async listForCustomer(customerId: string): Promise<HostingServiceEntity[]> {
+    return this.services.find({
+      where: { customerId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async create(input: CreateHostingServiceDto): Promise<HostingServiceEntity | { service: HostingServiceEntity; credentials: { username: string; mysqlUsername: string; mysqlPassword: string; mailboxPassword: string; ftpPassword: string } }> {
     const planName = input.planName ?? 'basic';
     const plan = await this.plans.findOne({ where: { name: planName } });
@@ -612,6 +619,31 @@ export class HostingService implements OnModuleInit {
       errorMessage: null,
     });
     return saved;
+  }
+
+  async listMailboxes(id: string): Promise<string[]> {
+    const service = await this.get(id);
+    const context = this.buildAdapterContext(service);
+    return this.mailAdapter.listMailboxes(context, service.primaryDomain);
+  }
+
+  async updateMailboxPassword(id: string, address: string, password: string): Promise<void> {
+    const service = await this.get(id);
+    if (service.status !== 'active') {
+      throw new BadRequestException('Service is not active');
+    }
+    const context = this.buildAdapterContext(service);
+    
+    // Ensure address belongs to this service's domain to prevent cross-tenant changes
+    if (!address.endsWith(`@${service.primaryDomain}`)) {
+      throw new BadRequestException(`Mailbox '${address}' does not belong to domain '${service.primaryDomain}'`);
+    }
+
+    if (password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
+    await this.mailAdapter.updatePassword(context, address, password);
   }
 
   private buildAdapterContext(service: HostingServiceEntity): AdapterContext {

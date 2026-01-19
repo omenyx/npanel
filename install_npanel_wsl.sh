@@ -211,7 +211,8 @@ install_dependencies() {
   
   # Note: bind9 might fail to start in WSL2 due to systemd issues, ignoring failure
   # Remove 'npm' from apt install because NodeSource nodejs package already includes npm
-  DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
+  # Add Roundcube dependencies (php-mysql, php-mbstring, php-xml, php-intl, php-zip, php-gd)
+  DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server nginx php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
   
   # Fix any broken installs
   DEBIAN_FRONTEND=noninteractive apt-get install -f -y
@@ -226,6 +227,21 @@ install_npanel_dependencies() {
   npm ci || npm install || true
   npm run build || true
   popd >/dev/null || true
+
+  # Fix permissions for Npanel
+  chown -R $SUDO_USER:$SUDO_USER /opt/npanel
+  
+  # Install Roundcube (Download only, manual config required in V1)
+  if [[ ! -d "/var/www/roundcube" ]]; then
+    log "Downloading Roundcube Webmail..."
+    mkdir -p /var/www/roundcube
+    # Using Roundcube 1.6.6 (Stable)
+    wget -q https://github.com/roundcube/roundcubemail/releases/download/1.6.6/roundcubemail-1.6.6-complete.tar.gz -O /tmp/roundcube.tar.gz
+    tar -xzf /tmp/roundcube.tar.gz -C /var/www/roundcube --strip-components=1
+    rm /tmp/roundcube.tar.gz
+    chown -R www-data:www-data /var/www/roundcube
+    log "Roundcube installed to /var/www/roundcube"
+  fi
 }
 
 setup_systemd_service() {

@@ -168,6 +168,15 @@ export interface MailAdapter {
     context: AdapterContext,
     address: string,
   ): Promise<AdapterOperationResult>;
+  updatePassword(
+    context: AdapterContext,
+    address: string,
+    password: string,
+  ): Promise<AdapterOperationResult>;
+  listMailboxes(
+    context: AdapterContext,
+    domain: string,
+  ): Promise<string[]>;
 }
 
 export interface FtpAdapter {
@@ -465,6 +474,31 @@ export class NoopMailAdapter implements MailAdapter {
       errorMessage: null,
     });
     return {};
+  }
+
+  async updatePassword(
+    context: AdapterContext,
+    address: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    await context.log({
+      adapter: 'mail',
+      operation: 'update',
+      targetKind: 'mailbox',
+      targetKey: address,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_change' },
+      errorMessage: null,
+    });
+    return {};
+  }
+
+  async listMailboxes(
+    context: AdapterContext,
+    domain: string,
+  ): Promise<string[]> {
+    return [`postmaster@${domain}`, `info@${domain}`];
   }
 }
 
