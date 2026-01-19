@@ -102,6 +102,7 @@ export class ToolsController {
       'mariadb',
       'pdns',
       'pdns-server',
+      'pdns_server',
       'exim4',
       'dovecot',
       'ssh',
