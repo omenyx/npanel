@@ -76,7 +76,11 @@ ensure_repo() {
     log "Repo already present at $dest"
     return
   fi
-  [[ -n "${REPO_URL:-}" ]] || die "REPO_URL not set and /opt/npanel missing. Set REPO_URL to your Npanel git URL."
+  # Default to omenyx/npanel if REPO_URL is not set
+  if [[ -z "${REPO_URL:-}" ]]; then
+    REPO_URL="https://github.com/omenyx/npanel.git"
+  fi
+  
   log "Cloning repo from $REPO_URL to $dest"
   mkdir -p /opt
   git clone --depth=1 "$REPO_URL" "$dest"
