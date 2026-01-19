@@ -34,7 +34,7 @@ export class HostingController {
     return result;
   }
 
-  @Get('logs')
+  @Get('services/logs')
   @HttpCode(HttpStatus.OK)
   async allLogs() {
     return this.hosting.listAllLogs();
