@@ -62,6 +62,18 @@ ensure_services_start() {
       systemctl disable bind9 --now 2>/dev/null || service bind9 stop 2>/dev/null || true
       systemctl disable named --now 2>/dev/null || service named stop 2>/dev/null || true
       
+      # FIX: Disable conflicting bind.conf if present
+      if [[ -f /etc/powerdns/pdns.d/bind.conf ]]; then
+          log "Disabling conflicting bind.conf for PowerDNS..."
+          mv /etc/powerdns/pdns.d/bind.conf /etc/powerdns/pdns.d/bind.conf.disabled
+      fi
+
+      # FIX: Ensure PowerDNS listens on 127.0.0.1 to avoid conflicts with systemd-resolved on port 53
+      if [[ ! -f /etc/powerdns/pdns.d/local-address.conf ]]; then
+          log "Configuring PowerDNS to listen on 127.0.0.1..."
+          echo 'local-address=127.0.0.1' > /etc/powerdns/pdns.d/local-address.conf
+      fi
+      
       # Ensure config file permissions are correct for pdns user
       if [[ -f /etc/powerdns/pdns.d/pdns.local.gmysql.conf ]]; then
           chown pdns:pdns /etc/powerdns/pdns.d/pdns.local.gmysql.conf
@@ -111,11 +123,11 @@ EOF
   mysql -e "FLUSH PRIVILEGES;"
   
   # Import PowerDNS Schema if table doesn't exist
-  if ! mysql -D pdns -e "DESCRIBE domains;" >/dev/null 2>&1; then
+  if ! mysql -D pdns -e "DESCRIBE records;" >/dev/null 2>&1; then
       log "Importing PowerDNS Schema..."
       # Standard schema for PowerDNS 4.x
       mysql -D pdns <<EOF
-CREATE TABLE domains (
+CREATE TABLE IF NOT EXISTS domains (
   id                    INT AUTO_INCREMENT,
   name                  VARCHAR(255) NOT NULL,
   master                VARCHAR(128) DEFAULT NULL,
@@ -128,7 +140,7 @@ CREATE TABLE domains (
 
 CREATE UNIQUE INDEX name_index ON domains(name);
 
-CREATE TABLE records (
+CREATE TABLE IF NOT EXISTS records (
   id                    BIGINT AUTO_INCREMENT,
   domain_id             INT DEFAULT NULL,
   name                  VARCHAR(255) DEFAULT NULL,
@@ -147,14 +159,14 @@ CREATE INDEX nametype_index ON records(name,type);
 CREATE INDEX domain_id ON records(domain_id);
 CREATE INDEX recordorder ON records (domain_id, ordername);
 
-CREATE TABLE supermasters (
+CREATE TABLE IF NOT EXISTS supermasters (
   ip                    VARCHAR(64) NOT NULL,
   nameserver            VARCHAR(255) NOT NULL,
   account               VARCHAR(40) NOT NULL,
   PRIMARY KEY (ip, nameserver)
 ) Engine=InnoDB;
 
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
   id                    INT AUTO_INCREMENT,
   domain_id             INT NOT NULL,
   name                  VARCHAR(255) NOT NULL,
@@ -168,7 +180,7 @@ CREATE TABLE comments (
 CREATE INDEX comments_name_type_idx ON comments (name, type);
 CREATE INDEX comments_order_idx ON comments (domain_id, modified_at);
 
-CREATE TABLE domainmetadata (
+CREATE TABLE IF NOT EXISTS domainmetadata (
   id                    INT AUTO_INCREMENT,
   domain_id             INT NOT NULL,
   kind                  VARCHAR(32),
@@ -178,7 +190,7 @@ CREATE TABLE domainmetadata (
 
 CREATE INDEX domainmetadata_idx ON domainmetadata (domain_id, kind);
 
-CREATE TABLE cryptokeys (
+CREATE TABLE IF NOT EXISTS cryptokeys (
   id                    INT AUTO_INCREMENT,
   domain_id             INT NOT NULL,
   flags                 INT NOT NULL,
@@ -189,7 +201,7 @@ CREATE TABLE cryptokeys (
 
 CREATE INDEX domainidindex ON cryptokeys(domain_id);
 
-CREATE TABLE tsigkeys (
+CREATE TABLE IF NOT EXISTS tsigkeys (
   id                    INT AUTO_INCREMENT,
   name                  VARCHAR(255),
   algorithm             VARCHAR(50),
@@ -483,6 +495,12 @@ install_dependencies() {
   # but we keep bind9-utils/dnsutils if needed. If 'bind9' service is conflicting, disable it.
   log "Installing PowerDNS"
   DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-mysql || log "PowerDNS install failed, continuing..."
+
+  # Fix PHP-FPM binary name for tool resolver
+  if [[ ! -f /usr/sbin/php-fpm && -f /usr/sbin/php-fpm8.2 ]]; then
+    log "Symlinking php-fpm8.2 to php-fpm..."
+    ln -s /usr/sbin/php-fpm8.2 /usr/sbin/php-fpm
+  fi
 }
 
 install_npanel_dependencies() {
