@@ -184,7 +184,12 @@ NGCONF
 
 install_dependencies() {
   log "Installing system dependencies"
-  apt_install curl ca-certificates lsb-release gnupg
+  apt_install curl ca-certificates lsb-release gnupg software-properties-common
+  
+  # Add PPA for PHP 8.2 (since Ubuntu 24.04 'noble' might not have 8.2 default or uses different naming)
+  log "Adding Ondrej PHP PPA"
+  LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
+  
   ensure_nodesource_20
   apt_install npm mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential
 }
