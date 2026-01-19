@@ -184,6 +184,11 @@ NGCONF
 
 install_dependencies() {
   log "Installing system dependencies"
+  
+  # Clean up potential conflicting packages from previous failed runs (common in Ubuntu 24.04)
+  DEBIAN_FRONTEND=noninteractive apt-get remove -y libnode-dev npm nodejs-doc || true
+  DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
+  
   apt_install curl ca-certificates lsb-release gnupg software-properties-common
   
   # Add PPA for PHP 8.2 (since Ubuntu 24.04 'noble' might not have 8.2 default or uses different naming)
@@ -198,6 +203,9 @@ install_dependencies() {
   # Note: bind9 might fail to start in WSL2 due to systemd issues, ignoring failure
   # Remove 'npm' from apt install because NodeSource nodejs package already includes npm
   DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server nginx php8.2-fpm exim4 dovecot-core dovecot-imapd bind9 rsync openssh-client git build-essential || log "Some packages failed to install/start (likely bind9/mysql in WSL), continuing..."
+  
+  # Fix any broken installs
+  DEBIAN_FRONTEND=noninteractive apt-get install -f -y
 }
 
 install_npanel_dependencies() {
