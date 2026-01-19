@@ -492,7 +492,7 @@ install_npanel_dependencies() {
   popd >/dev/null
   pushd /opt/npanel/frontend >/dev/null || true
   npm ci || npm install || true
-  npm run build || true
+  npm run build
   popd >/dev/null || true
 
   # Fix permissions for Npanel
@@ -545,6 +545,8 @@ EnvironmentFile=/opt/npanel/backend/.env
 ExecStart=/usr/bin/npm run start:dev
 Restart=always
 User=root
+StandardOutput=append:/var/log/npanel-backend.log
+StandardError=append:/var/log/npanel-backend.log
 
 [Install]
 WantedBy=multi-user.target
@@ -562,6 +564,8 @@ WorkingDirectory=/opt/npanel/frontend
 ExecStart=/usr/bin/npm start -- -p 3001
 Restart=always
 User=root
+StandardOutput=append:/var/log/npanel-frontend.log
+StandardError=append:/var/log/npanel-frontend.log
 
 [Install]
 WantedBy=multi-user.target
@@ -595,27 +599,41 @@ verify_deployment() {
   echo " OK"
 
   log "Waiting for Nginx/Frontend (port 8080)..."
-  if curl -s http://127.0.0.1:8080/admin > /tmp/frontend_check.html; then
-     # Check for Next.js app specific content
-     if grep -q "NPanel" /tmp/frontend_check.html || grep -q "Login" /tmp/frontend_check.html || grep -q "next" /tmp/frontend_check.html; then
-        log "Frontend is reachable via Nginx."
-     else
-        # It might be returning a JSON 404 from backend if Nginx routing is wrong
-        if grep -q "Cannot GET" /tmp/frontend_check.html; then
-             err "Frontend verification failed: Received Backend 404 instead of Frontend app. Check Nginx routing."
-        else
-             err "Frontend reachable but content mismatch. Check /tmp/frontend_check.html"
-        fi
-        return 1
-     fi
-  else
-     err "Frontend verification failed (http://localhost:8080/admin). Nginx or Frontend build might be broken."
-     if [[ -f /var/log/nginx/error.log ]]; then
+  local fe_retries=0
+  # Reset retries for frontend
+  # Reuse max_retries=10 from above (approx 30s)
+  
+  until curl -s http://127.0.0.1:8080/admin > /tmp/frontend_check.html && \
+        ! grep -q "502 Bad Gateway" /tmp/frontend_check.html && \
+        (grep -q "NPanel" /tmp/frontend_check.html || grep -q "Login" /tmp/frontend_check.html || grep -q "next" /tmp/frontend_check.html); do
+        
+    fe_retries=$((fe_retries+1))
+    if [[ $fe_retries -gt $max_retries ]]; then
+       echo ""
+       err "Frontend verification failed (http://localhost:8080/admin)."
+       
+       if grep -q "502 Bad Gateway" /tmp/frontend_check.html; then
+            err "Nginx returned 502 Bad Gateway. Frontend (port 3001) is not ready or crashed."
+       elif grep -q "Cannot GET" /tmp/frontend_check.html; then
+            err "Received Backend 404 instead of Frontend app. Check Nginx routing."
+       else
+            err "Content mismatch. Check /tmp/frontend_check.html"
+       fi
+
+       log "Checking Frontend logs..."
+       if [[ -f /var/log/npanel-frontend.log ]]; then tail -n 20 /var/log/npanel-frontend.log; fi
+       
+       if [[ -f /var/log/nginx/error.log ]]; then
         log "Nginx Error Log:"
         tail -n 20 /var/log/nginx/error.log
-     fi
-     return 1
-  fi
+       fi
+       return 1
+    fi
+    sleep 3
+    echo -n "."
+  done
+  echo " OK"
+  log "Frontend is reachable via Nginx."
 }
 
 final_message() {
@@ -626,7 +644,7 @@ final_message() {
   log "Tool status endpoint:"
   echo "  http://localhost:3000/system/tools/status"
   echo
-  log "If using Nginx proxy, it listens on 8080 (proxied to 3000)"
+  log "Nginx Proxy (Frontend + API):"
   echo "  http://localhost:8080/admin"
 }
 
