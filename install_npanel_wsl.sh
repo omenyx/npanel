@@ -226,6 +226,9 @@ ensure_repo() {
   fi
 
   if [[ -d "$dest/.git" ]]; then
+    # Fix git dubious ownership issue if running as root
+    git config --global --add safe.directory "$dest"
+
     if [[ "$1" == "--update" ]]; then
         log "Update flag set. Pulling latest changes..."
         cd "$dest" || return
