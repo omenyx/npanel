@@ -227,6 +227,9 @@ export class ToolResolver {
     if (binaryName === 'mysql' || binaryName === 'mysqladmin') {
       return 'mysql-server or mariadb-server package';
     }
+    if (binaryName === 'quota' || binaryName === 'quotacheck') {
+      return 'quota package';
+    }
     if (
       binaryName === 'useradd' ||
       binaryName === 'usermod' ||

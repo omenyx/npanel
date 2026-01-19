@@ -1,29 +1,39 @@
 import { Controller, Get } from '@nestjs/common';
 import { ToolResolver } from './tool-resolver';
+import { HostingService } from '../hosting/hosting.service';
 
 @Controller('system/tools')
 export class ToolsController {
-  constructor(private readonly tools: ToolResolver) {}
+  constructor(
+    private readonly toolResolver: ToolResolver,
+    private readonly hostingService: HostingService, // Inject HostingService
+  ) {}
 
   @Get('status')
-  async status() {
-    const toolNames = [
-      'id',
-      'useradd',
-      'usermod',
-      'userdel',
+  async getStatus() {
+    const tools = [
       'nginx',
-      'php-fpm',
+      'php',
       'mysql',
-      'mysqladmin',
-      'rndc',
-      'pdnsutil',
+      'pdns_server',
+      'git',
+      'curl',
+      'unzip',
+      'certbot',
+      'ufw',
+      'useradd',
+      'quota', // Add quota to the list
     ];
-    const results: any[] = [];
-    for (const name of toolNames) {
-      const status = await this.tools.statusFor(name);
-      results.push(status);
+
+    const results = {};
+    for (const tool of tools) {
+      const status = await this.toolResolver.statusFor(tool);
+      results[tool] = status.available;
     }
+
+    // Get enhanced quota status
+    const quotaStatus = await this.hostingService.verifyQuotaSupport();
+
     return {
       tools: results,
       serverInfo: {
@@ -32,6 +42,7 @@ export class ToolsController {
         mailBackend: 'Exim4 + Dovecot',
         ftpBackend: 'System Users',
       },
+      quotaStatus, // Expose detailed quota status
     };
   }
 }

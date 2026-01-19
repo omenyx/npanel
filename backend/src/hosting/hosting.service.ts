@@ -34,6 +34,11 @@ import { HostingCredentialsService } from './hosting-credentials.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { ToolResolver } from '../system/tool-resolver';
 import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 @Injectable()
 export class HostingService implements OnModuleInit {
@@ -685,7 +690,15 @@ export class HostingService implements OnModuleInit {
     };
   }
 
-  private async checkToolReadinessForProvision(): Promise<{ missing: string[] }> {
+  private async checkToolReadinessForProvision(): Promise<{
+    missing: string[];
+    quotaStatus?: {
+      tools_present: boolean;
+      mount_options: boolean;
+      kernel_support: boolean;
+      enabled: boolean;
+    };
+  }> {
     const required: string[] = ['useradd', 'nginx', 'php-fpm', 'mysql'];
     const missing: string[] = [];
     for (const name of required) {
@@ -706,7 +719,52 @@ export class HostingService implements OnModuleInit {
       const ftpStatus = await this.tools.statusFor(process.env.NPANEL_FTP_CMD);
       if (!ftpStatus.available) missing.push('ftp_cmd');
     }
-    return { missing };
+
+    const quotaStatus = await this.verifyQuotaSupport();
+
+    return { missing, quotaStatus };
+  }
+
+  async verifyQuotaSupport(): Promise<{
+    tools_present: boolean;
+    mount_options: boolean;
+    kernel_support: boolean;
+    enabled: boolean;
+  }> {
+    // 1. Check for quota tools
+    const quotaStatus = await this.tools.statusFor('quota');
+    const quotaCheckStatus = await this.tools.statusFor('quotacheck');
+    const toolsPresent = !!(quotaStatus.available && quotaCheckStatus.available);
+
+    // 2. Check mount options in /proc/mounts
+    let mountOptions = false;
+    try {
+      const mounts = await fs.readFile('/proc/mounts', 'utf8');
+      // Look for ext4/xfs with usrquota/grpquota on root or home
+      if (
+        /(\/|\/home)\s+\w+\s+.*(usrquota|grpquota|quota).*/.test(mounts)
+      ) {
+        mountOptions = true;
+      }
+    } catch (e) {
+      console.warn(`Failed to read /proc/mounts: ${e instanceof Error ? e.message : e}`);
+    }
+
+    // 3. Check kernel support (primitive check)
+    let kernelSupport = false;
+    try {
+      await fs.access('/proc/sys/fs/quota');
+      kernelSupport = true;
+    } catch {
+      kernelSupport = false;
+    }
+
+    return {
+      tools_present: toolsPresent,
+      mount_options: mountOptions,
+      kernel_support: kernelSupport,
+      enabled: toolsPresent && mountOptions,
+    };
   }
 
   private deriveSystemUsername(service: HostingServiceEntity): string {
