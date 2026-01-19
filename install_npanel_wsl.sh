@@ -245,24 +245,37 @@ ensure_repo() {
         log "Update flag set. Syncing to origin/main..."
         cd "$dest" || return
         
-        # Stash any local changes (e.g., config tweaks, hacks)
-        if [[ -n "$(git status --porcelain)" ]]; then
-            log "Stashing local changes..."
-            git stash save "Auto-update stash $(date +%s)"
+        # Check connectivity
+        log "Fetching latest changes..."
+        if ! git fetch origin; then
+            err "Failed to fetch from origin. Check internet connection or git configuration."
+            return 1
         fi
 
-        git fetch origin
+        # Stash any local changes (e.g., config tweaks, hacks)
+        local stashed=0
+        if [[ -n "$(git status --porcelain)" ]]; then
+            log "Stashing local changes..."
+            # Use push if available (git 2.13+), fall back to save
+            if git stash --help | grep -q "push"; then
+                git stash push -m "Auto-update stash $(date +%s)"
+            else
+                git stash save "Auto-update stash $(date +%s)"
+            fi
+            stashed=1
+        fi
+
+        log "Resetting to origin/main..."
         git reset --hard origin/main
         
         # Try to re-apply local changes
-        if git stash list | grep -q "Auto-update stash"; then
+        if [[ $stashed -eq 1 ]]; then
             log "Restoring local changes..."
-            git stash pop || log "Warning: Merge conflict during stash pop. Local changes may be in conflict markers."
+            if ! git stash pop; then
+                log "Warning: Merge conflict during stash pop. Local changes are preserved in conflict markers."
+                log "You may need to resolve conflicts manually in $dest"
+            fi
         fi
-        
-        # Clean untracked files only if strictly necessary? 
-        # Better to leave them in case user added custom files.
-        # git clean -fd 
         
         return
     else
