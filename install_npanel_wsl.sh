@@ -555,7 +555,7 @@ main() {
   install_dependencies
   ensure_services_start
   setup_mysql
-  ensure_repo "$1"
+  ensure_repo "${1:-}"
   install_npanel_dependencies
   write_env
   verify_tools
