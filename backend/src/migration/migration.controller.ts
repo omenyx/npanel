@@ -79,4 +79,17 @@ export class MigrationController {
     const result = await this.migrations.runNextStep(id);
     return result;
   }
+
+  @Post(':id/start')
+  @HttpCode(HttpStatus.OK)
+  async start(@Param('id') id: string) {
+    await this.migrations.startBackgroundMigration(id);
+    return { success: true, message: 'Migration started in background' };
+  }
+
+  @Get(':id/logs')
+  @HttpCode(HttpStatus.OK)
+  async listLogs(@Param('id') id: string) {
+      return this.migrations.listLogs(id);
+  }
 }

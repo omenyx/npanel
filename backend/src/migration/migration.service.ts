@@ -192,6 +192,59 @@ export class MigrationService {
     return this.planJob(jobId);
   }
 
+  async startBackgroundMigration(jobId: string): Promise<void> {
+    const job = await this.jobs.findOne({
+      where: { id: jobId },
+      relations: ['accounts', 'steps'],
+    });
+    if (!job) {
+      throw new NotFoundException('Migration job not found');
+    }
+    
+    // If job is already running, do nothing (or maybe restart if stuck?)
+    // For now, assume we just want to kick it off.
+    if (job.status === 'running') {
+        return;
+    }
+    
+    // Ensure steps are planned
+    if (!job.steps || job.steps.length === 0) {
+      await this.planJob(job.id);
+    }
+    
+    // Mark as running immediately
+    job.status = 'running';
+    await this.jobs.save(job);
+    
+    // Start the processing loop in background (no await)
+    this.processJobLoop(job.id).catch(err => {
+        console.error(`Background migration failed for job ${jobId}`, err);
+    });
+  }
+
+  private async processJobLoop(jobId: string): Promise<void> {
+      // Loop until no more steps or failure
+      while (true) {
+          const result = await this.runNextStep(jobId);
+          if (
+              result.job.status === 'completed' || 
+              result.job.status === 'failed' || 
+              result.job.status === 'partial'
+          ) {
+              break;
+          }
+          // If step is null but status is running, it might mean waiting or inconsistency.
+          // refreshJobStatus inside runNextStep handles status updates.
+          if (!result.step && result.job.status === 'running') {
+              // No pending step found but job thinks it is running.
+              // Maybe we need to break to avoid infinite loop?
+              // runNextStep calls refreshJobStatus. If no pending steps, it sets to completed/failed.
+              // So we should be fine.
+              break;
+          }
+      }
+  }
+
   async runNextStep(jobId: string): Promise<{
     job: MigrationJob;
     step: MigrationStep | null;

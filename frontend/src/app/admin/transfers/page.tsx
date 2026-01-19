@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowRightLeft, Plus, RefreshCw, X, Play, ShieldAlert } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { ArrowRightLeft, Plus, RefreshCw, X, Play, ShieldAlert, Eye, Terminal } from "lucide-react";
 
 type MigrationJob = {
   id: string;
@@ -9,6 +9,20 @@ type MigrationJob = {
   status: string;
   sourceType: string;
   dryRun: boolean;
+};
+
+type MigrationStep = {
+    id: string;
+    name: string;
+    status: string;
+    lastError: { message: string } | null;
+};
+
+type MigrationLog = {
+    id: string;
+    level: string;
+    message: string;
+    createdAt: string;
 };
 
 export default function TransfersPage() {
@@ -32,6 +46,12 @@ export default function TransfersPage() {
     sourceDomain: "",   // cPanel account domain
     dryRun: true
   });
+
+  // Details View State
+  const [selectedJob, setSelectedJob] = useState<MigrationJob | null>(null);
+  const [steps, setSteps] = useState<MigrationStep[]>([]);
+  const [logs, setLogs] = useState<MigrationLog[]>([]);
+  const [polling, setPolling] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -66,6 +86,28 @@ export default function TransfersPage() {
     }
   };
 
+  const fetchJobDetails = async (jobId: string) => {
+      const token = window.localStorage.getItem("npanel_access_token");
+      if (!token) return;
+      try {
+          const [stepsRes, logsRes, jobRes] = await Promise.all([
+              fetch(`http://127.0.0.1:3000/v1/migrations/${jobId}/steps`, { headers: { Authorization: `Bearer ${token}` } }),
+              fetch(`http://127.0.0.1:3000/v1/migrations/${jobId}/logs`, { headers: { Authorization: `Bearer ${token}` } }),
+              fetch(`http://127.0.0.1:3000/v1/migrations/${jobId}`, { headers: { Authorization: `Bearer ${token}` } })
+          ]);
+          if (stepsRes.ok) setSteps(await stepsRes.json());
+          if (logsRes.ok) setLogs(await logsRes.json());
+          if (jobRes.ok) {
+              const updatedJob = await jobRes.json();
+              setSelectedJob(updatedJob);
+              // Update status in list as well
+              setTransfers(prev => prev.map(t => t.id === updatedJob.id ? updatedJob : t));
+          }
+      } catch (e) {
+          console.error("Failed to fetch job details", e);
+      }
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -75,6 +117,34 @@ export default function TransfersPage() {
         fetchSshKey();
     }
   }, [showWizard]);
+
+  // Polling for details view
+  useEffect(() => {
+      let interval: NodeJS.Timeout;
+      if (selectedJob && (selectedJob.status === 'running' || selectedJob.status === 'pending')) {
+          fetchJobDetails(selectedJob.id); // Immediate fetch
+          interval = setInterval(() => {
+              fetchJobDetails(selectedJob.id);
+          }, 3000);
+      }
+      return () => clearInterval(interval);
+  }, [selectedJob?.id, selectedJob?.status]);
+
+  const handleStartMigration = async () => {
+      if (!selectedJob) return;
+      const token = window.localStorage.getItem("npanel_access_token");
+      if (!token) return;
+      try {
+          await fetch(`http://127.0.0.1:3000/v1/migrations/${selectedJob.id}/start`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          // Refresh details immediately
+          fetchJobDetails(selectedJob.id);
+      } catch (e) {
+          alert("Failed to start migration");
+      }
+  };
 
   const handleCreateTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +257,104 @@ export default function TransfersPage() {
           <ShieldAlert className="h-4 w-4" />
           {error}
         </div>
+      )}
+
+      {/* Details View Modal */}
+      {selectedJob && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+                  <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+                      <div>
+                          <h3 className="font-semibold text-white flex items-center gap-2">
+                              {selectedJob.name}
+                              <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${
+                                  selectedJob.status === 'completed' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-900/50' :
+                                  selectedJob.status === 'failed' ? 'bg-red-900/30 text-red-400 border border-red-900/50' :
+                                  selectedJob.status === 'running' ? 'bg-blue-900/30 text-blue-400 border border-blue-900/50 animate-pulse' :
+                                  'bg-zinc-800 text-zinc-400'
+                              }`}>
+                                  {selectedJob.status}
+                              </span>
+                          </h3>
+                          <div className="text-xs text-zinc-500 font-mono mt-1">{selectedJob.id}</div>
+                      </div>
+                      <div className="flex gap-3">
+                        {selectedJob.status === 'pending' && (
+                             <button 
+                                onClick={handleStartMigration}
+                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium"
+                             >
+                                 <Play className="h-3 w-3" />
+                                 Start Migration
+                             </button>
+                        )}
+                        <button onClick={() => setSelectedJob(null)} className="text-zinc-500 hover:text-white">
+                            <X className="h-5 w-5" />
+                        </button>
+                      </div>
+                  </div>
+                  
+                  <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                      {/* Steps List */}
+                      <div className="w-full md:w-1/3 border-r border-zinc-800 overflow-y-auto bg-zinc-900/50">
+                          <div className="p-4 space-y-2">
+                              <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Migration Steps</h4>
+                              {steps.length === 0 ? (
+                                  <div className="text-xs text-zinc-600 italic text-center py-4">
+                                      Steps will be generated when started.
+                                  </div>
+                              ) : (
+                                  steps.map(step => (
+                                      <div key={step.id} className={`p-3 rounded border text-xs ${
+                                          step.status === 'running' ? 'bg-blue-900/10 border-blue-900/30 text-blue-200' :
+                                          step.status === 'completed' ? 'bg-emerald-900/10 border-emerald-900/30 text-emerald-200' :
+                                          step.status === 'failed' ? 'bg-red-900/10 border-red-900/30 text-red-200' :
+                                          'bg-zinc-950 border-zinc-800 text-zinc-400'
+                                      }`}>
+                                          <div className="flex justify-between items-center mb-1">
+                                              <span className="font-medium">{step.name}</span>
+                                              {step.status === 'running' && <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />}
+                                          </div>
+                                          {step.lastError && (
+                                              <div className="mt-1 text-red-400 break-words bg-red-950/50 p-1.5 rounded">
+                                                  {step.lastError.message}
+                                              </div>
+                                          )}
+                                      </div>
+                                  ))
+                              )}
+                          </div>
+                      </div>
+                      
+                      {/* Logs View */}
+                      <div className="flex-1 bg-black overflow-y-auto font-mono text-xs p-4">
+                          <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                              <Terminal className="h-3 w-3" />
+                              Execution Logs
+                          </h4>
+                          <div className="space-y-1">
+                              {logs.map(log => (
+                                  <div key={log.id} className="flex gap-2">
+                                      <span className="text-zinc-600 shrink-0">
+                                          {new Date(log.createdAt).toLocaleTimeString()}
+                                      </span>
+                                      <span className={`${
+                                          log.level === 'error' ? 'text-red-400' :
+                                          log.level === 'warning' ? 'text-amber-400' :
+                                          'text-zinc-300'
+                                      } break-all`}>
+                                          {log.message}
+                                      </span>
+                                  </div>
+                              ))}
+                              {logs.length === 0 && (
+                                  <div className="text-zinc-700 italic">No logs available yet...</div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Create Transfer Wizard */}
@@ -434,6 +602,7 @@ export default function TransfersPage() {
                         <th className="px-4 py-3">Source</th>
                         <th className="px-4 py-3">Mode</th>
                         <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
@@ -462,6 +631,18 @@ export default function TransfersPage() {
                                 }`}>
                                     {t.status}
                                 </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                                <button
+                                    onClick={() => {
+                                        setSelectedJob(t);
+                                        fetchJobDetails(t.id);
+                                    }}
+                                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 py-1 rounded inline-flex items-center gap-1 transition-colors"
+                                >
+                                    <Eye className="h-3 w-3" />
+                                    View
+                                </button>
                             </td>
                         </tr>
                     ))}
