@@ -523,4 +523,56 @@ export class ShellDnsAdapter implements DnsAdapter {
     });
     return {};
   }
+
+  async listRecords(
+    context: AdapterContext,
+    zoneName: string,
+  ): Promise<DnsRecordSpec[]> {
+    const backend = getDnsBackendName();
+    if (!backend) {
+      return [];
+    }
+
+    if (backend === 'powerdns') {
+      const pdnsBin = process.env.NPANEL_POWERDNS_PDNSUTIL_CMD || 'pdnsutil';
+      const pdnsPath = await this.tools.resolve(pdnsBin);
+      const baseArgs = getArgsFromEnv('NPANEL_POWERDNS_PDNSUTIL', []);
+      const result = await execCommand(pdnsPath, [
+        ...baseArgs,
+        'list-zone',
+        zoneName,
+      ]);
+
+      if (result.code !== 0) {
+        return [];
+      }
+
+      const records: DnsRecordSpec[] = [];
+      const lines = result.stdout.split('\n');
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 5) {
+          continue;
+        }
+        const fqdn = parts[0].replace(/\.$/, '');
+        const type = parts[3];
+        const data = parts.slice(4).join(' ');
+
+        let relativeName = fqdn;
+        if (fqdn === zoneName) {
+          relativeName = '@';
+        } else if (fqdn.endsWith(`.${zoneName}`)) {
+          relativeName = fqdn.substring(0, fqdn.length - zoneName.length - 1);
+        }
+
+        records.push({
+          name: relativeName,
+          type,
+          data,
+        });
+      }
+      return records;
+    }
+    return [];
+  }
 }

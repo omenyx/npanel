@@ -216,4 +216,57 @@ export class ShellFtpAdapter implements FtpAdapter {
     });
     return {};
   }
+
+  async resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    if (!context.dryRun) {
+       const ftpBin = process.env.NPANEL_FTP_CMD;
+       if (!ftpBin) {
+         throw new Error('ftp_command_not_configured');
+       }
+       const command = await this.tools.resolve(ftpBin);
+       const args = getArgsFromEnv('NPANEL_FTP', []);
+       const cliArgs: string[] = [
+         ...args,
+         'password',
+         username,
+         password
+       ];
+       
+       const result = await execCommand(command, cliArgs);
+       if (result.code !== 0) {
+         await context.log({
+            adapter: 'ftp_shell',
+            operation: 'update',
+            targetKind: 'ftp_account',
+            targetKey: username,
+            success: false,
+            dryRun: false,
+            details: {
+                command,
+                args: cliArgs,
+                stdout: result.stdout,
+                stderr: result.stderr,
+            },
+            errorMessage: 'ftp_password_reset_failed',
+         });
+         throw new Error('ftp_password_reset_failed');
+       }
+    }
+
+    await context.log({
+      adapter: 'ftp_shell',
+      operation: 'update',
+      targetKind: 'ftp_account',
+      targetKey: username,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_reset' },
+      errorMessage: null,
+    });
+    return {};
+  }
 }

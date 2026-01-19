@@ -34,6 +34,27 @@ export class MigrationService {
 
   async createJob(input: CreateMigrationJobDto): Promise<MigrationJob> {
     const job = this.jobs.create({
+      customerId: null,
+      name: input.name,
+      sourceType: input.sourceType,
+      status: 'pending',
+      sourceConfig: input.sourceConfig ?? null,
+      dryRun: input.dryRun ?? false,
+    });
+    const saved = await this.jobs.save(job);
+    await this.appendLog(saved, null, 'info', 'job_created', {
+      sourceType: saved.sourceType,
+      dryRun: saved.dryRun,
+    });
+    return saved;
+  }
+
+  async createJobForCustomer(
+    customerId: string,
+    input: CreateMigrationJobDto,
+  ): Promise<MigrationJob> {
+    const job = this.jobs.create({
+      customerId,
       name: input.name,
       sourceType: input.sourceType,
       status: 'pending',
@@ -54,9 +75,30 @@ export class MigrationService {
     });
   }
 
+  async listJobsForCustomer(customerId: string): Promise<MigrationJob[]> {
+    return this.jobs.find({
+      where: { customerId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async getJob(id: string): Promise<MigrationJob> {
     const job = await this.jobs.findOne({
       where: { id },
+      relations: ['accounts', 'steps'],
+    });
+    if (!job) {
+      throw new NotFoundException('Migration job not found');
+    }
+    return job;
+  }
+
+  async getJobForCustomer(
+    customerId: string,
+    id: string,
+  ): Promise<MigrationJob> {
+    const job = await this.jobs.findOne({
+      where: { id, customerId },
       relations: ['accounts', 'steps'],
     });
     if (!job) {
@@ -100,6 +142,18 @@ export class MigrationService {
     });
   }
 
+  async listStepsForCustomer(
+    customerId: string,
+    jobId: string,
+  ): Promise<MigrationStep[]> {
+    await this.getJobForCustomer(customerId, jobId);
+    return this.steps.find({
+      where: { job: { id: jobId } },
+      relations: ['account'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   async planJob(jobId: string): Promise<MigrationStep[]> {
     const job = await this.jobs.findOne({
       where: { id: jobId },
@@ -126,6 +180,14 @@ export class MigrationService {
     throw new BadRequestException(
       'Planning not implemented for this source type',
     );
+  }
+
+  async planJobForCustomer(
+    customerId: string,
+    jobId: string,
+  ): Promise<MigrationStep[]> {
+    await this.getJobForCustomer(customerId, jobId);
+    return this.planJob(jobId);
   }
 
   async runNextStep(jobId: string): Promise<{
@@ -204,6 +266,43 @@ export class MigrationService {
       job: refreshed ?? job,
       step,
     };
+  }
+
+  async runNextStepForCustomer(
+    customerId: string,
+    jobId: string,
+  ): Promise<{
+    job: MigrationJob;
+    step: MigrationStep | null;
+  }> {
+    await this.getJobForCustomer(customerId, jobId);
+    return this.runNextStep(jobId);
+  }
+
+  async listLogs(jobId: string): Promise<MigrationLog[]> {
+    const job = await this.jobs.findOne({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException('Migration job not found');
+    }
+    return this.logs.find({
+      where: { job: { id: job.id } },
+      relations: ['account'],
+      order: { createdAt: 'DESC' },
+      take: 200,
+    });
+  }
+
+  async listLogsForCustomer(
+    customerId: string,
+    jobId: string,
+  ): Promise<MigrationLog[]> {
+    await this.getJobForCustomer(customerId, jobId);
+    return this.logs.find({
+      where: { job: { id: jobId } },
+      relations: ['account'],
+      order: { createdAt: 'DESC' },
+      take: 200,
+    });
   }
 
   private async planLiveSshJob(job: MigrationJob): Promise<MigrationStep[]> {

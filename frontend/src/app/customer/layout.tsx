@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Shield,
+  ArrowRightLeft,
 } from "lucide-react";
 
 export default function CustomerLayout({
@@ -45,10 +47,21 @@ export default function CustomerLayout({
       href: "/customer",
       icon: LayoutDashboard,
     },
+    {
+      label: "Transfers",
+      href: "/customer/migrations",
+      icon: ArrowRightLeft,
+    },
+    {
+      label: "Security",
+      href: "/customer/security",
+      icon: Shield,
+    },
   ];
 
   const handleLogout = () => {
     window.localStorage.removeItem("npanel_access_token");
+    window.localStorage.removeItem("npanel_refresh_token");
     router.push("/login");
   };
 

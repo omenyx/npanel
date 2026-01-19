@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -12,6 +13,7 @@ import type { Request } from 'express';
 import { IamService } from './iam.service';
 import { InstallInitDto } from './dto/install-init.dto';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtService } from '@nestjs/jwt';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -58,6 +60,7 @@ export class IamController {
       sub: user.id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.tokenVersion ?? 0,
     };
 
     const accessToken = await this.jwt.signAsync(payload, {
@@ -83,6 +86,39 @@ export class IamController {
         refreshToken,
       },
     };
+  }
+
+  @Post('auth/change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Req() req: Request & { user?: any },
+    @Body() body: ChangePasswordDto,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new BadRequestException('Unauthorized');
+    }
+    try {
+      await this.iam.changePassword(userId, body.currentPassword, body.newPassword);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'change_password_failed',
+      );
+    }
+    return { ok: true };
+  }
+
+  @Post('auth/logout-all')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logoutAll(@Req() req: Request & { user?: any }) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new BadRequestException('Unauthorized');
+    }
+    await this.iam.logoutAll(userId);
+    return { ok: true };
   }
 
   @Get('auth/me')

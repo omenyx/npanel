@@ -98,6 +98,10 @@ export class ShellMailAdapter implements MailAdapter {
       const args = getArgsFromEnv('NPANEL_MAIL', []);
       const cliArgs: string[] = [...args, 'present', spec.address];
       if (spec.quotaMb != null) {
+        // If quotaMb is 0, it means unlimited for the user, but we should pass it as 0 to the script
+        // The script (e.g., exim/dovecot adapter script) should handle 0 as unlimited or max system limit.
+        // However, if the intent is "use entire space", typically mailbox quotas are per-mailbox limits.
+        // If mailboxQuota is 0 (unlimited), it means this specific mailbox can grow until the disk is full or system limit is reached.
         cliArgs.push('quotaMb', String(spec.quotaMb));
       }
       if (spec.password) {

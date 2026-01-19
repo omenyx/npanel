@@ -6,12 +6,18 @@ import {
   HttpStatus,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { MigrationService } from './migration.service';
 import { CreateMigrationJobDto } from './dto/create-migration-job.dto';
 import { AddMigrationAccountDto } from './dto/add-migration-account.dto';
+import { JwtAuthGuard } from '../iam/jwt-auth.guard';
+import { RolesGuard } from '../iam/roles.guard';
+import { Roles } from '../iam/roles.decorator';
 
 @Controller('v1/migrations')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 export class MigrationController {
   constructor(private readonly migrations: MigrationService) {}
 

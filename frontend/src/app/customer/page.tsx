@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Server, ExternalLink } from "lucide-react";
+import { Server, ExternalLink, HardDrive, Database, Mail } from "lucide-react";
+
+interface PlanLimits {
+  diskQuotaMb: number;
+  maxDatabases: number;
+  maxMailboxes: number;
+  mailboxQuotaMb: number;
+}
 
 interface HostingService {
   id: string;
@@ -10,11 +17,18 @@ interface HostingService {
   planName: string;
   status: string;
   createdAt: string;
+  planLimits: PlanLimits | null;
 }
 
 export default function CustomerDashboard() {
   const [services, setServices] = useState<HostingService[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const formatDisk = (mb: number) => {
+    if (!Number.isFinite(mb) || mb < 0) return "—";
+    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+    return `${mb} MB`;
+  };
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -76,6 +90,43 @@ export default function CustomerDashboard() {
                 >
                   {service.status}
                 </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <HardDrive className="h-3.5 w-3.5" />
+                    Disk
+                  </div>
+                  <div className="mt-1 text-sm text-white">
+                    {service.planLimits ? formatDisk(service.planLimits.diskQuotaMb) : "—"}
+                  </div>
+                </div>
+                <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Database className="h-3.5 w-3.5" />
+                    Databases
+                  </div>
+                  <div className="mt-1 text-sm text-white">
+                    {service.planLimits ? service.planLimits.maxDatabases : "—"}
+                  </div>
+                </div>
+                <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Mail className="h-3.5 w-3.5" />
+                    Mailboxes
+                  </div>
+                  <div className="mt-1 text-sm text-white">
+                    {service.planLimits ? service.planLimits.maxMailboxes : "—"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 text-xs text-zinc-500">
+                Created{" "}
+                {service.createdAt
+                  ? new Date(service.createdAt).toLocaleDateString()
+                  : "—"}
               </div>
               
               <div className="mt-6 flex gap-3">

@@ -9,6 +9,7 @@ export type JwtPayload = {
   sub: string;
   email: string;
   role: string;
+  tokenVersion?: number;
 };
 
 @Injectable()
@@ -36,6 +37,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload) {
     const user = await this.iam.findById(payload.sub);
     if (!user) {
+      return null;
+    }
+    const tokenVersion = payload.tokenVersion ?? 0;
+    if ((user.tokenVersion ?? 0) !== tokenVersion) {
       return null;
     }
 

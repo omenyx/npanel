@@ -82,6 +82,10 @@ export class HostingService implements OnModuleInit {
     return this.plans.find({ order: { name: 'ASC' } });
   }
 
+  async getPlan(name: string): Promise<HostingPlan | null> {
+    return this.plans.findOne({ where: { name } });
+  }
+
   async createPlan(input: any): Promise<HostingPlan> {
     const exists = await this.plans.findOne({ where: { name: input.name } });
     if (exists) {
@@ -638,8 +642,6 @@ export class HostingService implements OnModuleInit {
       throw new BadRequestException('Service is not active');
     }
     const context = this.buildAdapterContext(service);
-    
-    // Ensure address belongs to this service's domain to prevent cross-tenant changes
     if (!address.endsWith(`@${service.primaryDomain}`)) {
       throw new BadRequestException(`Mailbox '${address}' does not belong to domain '${service.primaryDomain}'`);
     }
@@ -649,6 +651,91 @@ export class HostingService implements OnModuleInit {
     }
 
     await this.mailAdapter.updatePassword(context, address, password);
+  }
+
+  async createMailbox(
+    id: string,
+    input: { localPart: string; password: string },
+  ): Promise<{ address: string }> {
+    const service = await this.get(id);
+    if (service.status !== 'active') {
+      throw new BadRequestException('Service is not active');
+    }
+    const planName = service.planName ?? 'basic';
+    const plan = await this.plans.findOne({ where: { name: planName } });
+    if (!plan) {
+      throw new BadRequestException('Hosting plan not found');
+    }
+
+    const localPart = input.localPart.trim().toLowerCase();
+    if (!/^[a-z0-9._-]+$/.test(localPart) || localPart.length < 1 || localPart.length > 64) {
+      throw new BadRequestException('Invalid mailbox name');
+    }
+    if (input.password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
+    const existing = await this.listMailboxes(id);
+    if (existing.length >= plan.maxMailboxes) {
+      throw new BadRequestException('Mailbox limit reached for this plan');
+    }
+
+    const address = `${localPart}@${service.primaryDomain}`;
+    const context = this.buildAdapterContext(service);
+    await this.mailAdapter.ensureMailboxPresent(context, {
+      address,
+      password: input.password,
+      quotaMb: plan.mailboxQuotaMb,
+    });
+    return { address };
+  }
+
+  async deleteMailbox(id: string, address: string): Promise<void> {
+    const service = await this.get(id);
+    if (service.status !== 'active') {
+      throw new BadRequestException('Service is not active');
+    }
+    if (!address.endsWith(`@${service.primaryDomain}`)) {
+      throw new BadRequestException('Mailbox does not belong to this service');
+    }
+    const context = this.buildAdapterContext(service);
+    await this.mailAdapter.ensureMailboxAbsent(context, address);
+  }
+
+  async listDatabases(id: string): Promise<string[]> {
+    const service = await this.get(id);
+    const context = this.buildAdapterContext(service);
+    const mysqlUsername = `${this.deriveSystemUsername(service)}_db`;
+    return this.mysqlAdapter.listDatabases(context, mysqlUsername);
+  }
+
+  async resetDatabasePassword(id: string, password: string): Promise<void> {
+    const service = await this.get(id);
+    if (service.status !== 'active') throw new BadRequestException('Service not active');
+    const context = this.buildAdapterContext(service);
+    const mysqlUsername = `${this.deriveSystemUsername(service)}_db`;
+    await this.mysqlAdapter.resetPassword(context, mysqlUsername, password);
+  }
+
+  async getFtpCredentials(id: string): Promise<{ username: string; host: string }> {
+    const service = await this.get(id);
+    const username = this.deriveSystemUsername(service);
+    const host = process.env.NPANEL_HOSTING_DEFAULT_IPV4 || '127.0.0.1';
+    return { username, host };
+  }
+
+  async resetFtpPassword(id: string, password: string): Promise<void> {
+    const service = await this.get(id);
+    if (service.status !== 'active') throw new BadRequestException('Service not active');
+    const context = this.buildAdapterContext(service);
+    const username = this.deriveSystemUsername(service);
+    await this.ftpAdapter.resetPassword(context, username, password);
+  }
+
+  async listDnsRecords(id: string): Promise<any[]> {
+    const service = await this.get(id);
+    const context = this.buildAdapterContext(service);
+    return this.dnsAdapter.listRecords(context, service.primaryDomain);
   }
 
   private buildAdapterContext(service: HostingServiceEntity): AdapterContext {

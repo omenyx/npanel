@@ -54,4 +54,33 @@ export class IamService {
 
     return user;
   }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) {
+      return;
+    }
+    const match = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!match) {
+      throw new Error('INVALID_CREDENTIALS');
+    }
+    if (newPassword.length < 8) {
+      throw new Error('WEAK_PASSWORD');
+    }
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.users.save(user);
+  }
+
+  async logoutAll(userId: string): Promise<void> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) {
+      return;
+    }
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    await this.users.save(user);
+  }
 }

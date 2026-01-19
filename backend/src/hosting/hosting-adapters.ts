@@ -146,6 +146,15 @@ export interface MysqlAdapter {
     context: AdapterContext,
     username: string,
   ): Promise<AdapterOperationResult>;
+  listDatabases(
+    context: AdapterContext,
+    username: string,
+  ): Promise<string[]>;
+  resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
+  ): Promise<AdapterOperationResult>;
 }
 
 export interface DnsAdapter {
@@ -157,6 +166,10 @@ export interface DnsAdapter {
     context: AdapterContext,
     zoneName: string,
   ): Promise<AdapterOperationResult>;
+  listRecords(
+    context: AdapterContext,
+    zoneName: string,
+  ): Promise<DnsRecordSpec[]>;
 }
 
 export interface MailAdapter {
@@ -187,6 +200,11 @@ export interface FtpAdapter {
   ensureAccountAbsent(
     context: AdapterContext,
     username: string,
+  ): Promise<AdapterOperationResult>;
+  resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
   ): Promise<AdapterOperationResult>;
 }
 
@@ -401,6 +419,31 @@ export class NoopMysqlAdapter implements MysqlAdapter {
     });
     return {};
   }
+
+  async listDatabases(
+    context: AdapterContext,
+    username: string,
+  ): Promise<string[]> {
+    return [`${username}_db1`, `${username}_db2`];
+  }
+
+  async resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    await context.log({
+      adapter: 'mysql',
+      operation: 'update',
+      targetKind: 'mysql_account',
+      targetKey: username,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_reset' },
+      errorMessage: null,
+    });
+    return {};
+  }
 }
 
 export class NoopDnsAdapter implements DnsAdapter {
@@ -436,6 +479,17 @@ export class NoopDnsAdapter implements DnsAdapter {
       errorMessage: null,
     });
     return {};
+  }
+
+  async listRecords(
+    context: AdapterContext,
+    zoneName: string,
+  ): Promise<DnsRecordSpec[]> {
+    return [
+      { name: '@', type: 'A', data: '127.0.0.1' },
+      { name: 'www', type: 'CNAME', data: zoneName },
+      { name: '@', type: 'MX', data: `10 ${zoneName}` },
+    ];
   }
 }
 
@@ -534,6 +588,24 @@ export class NoopFtpAdapter implements FtpAdapter {
       success: true,
       dryRun: context.dryRun,
       details: {},
+      errorMessage: null,
+    });
+    return {};
+  }
+
+  async resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    await context.log({
+      adapter: 'ftp',
+      operation: 'update',
+      targetKind: 'ftp_account',
+      targetKey: username,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_reset' },
       errorMessage: null,
     });
     return {};

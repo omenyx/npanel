@@ -33,6 +33,7 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+.trae/
 
 # OS generated files
 Thumbs.db

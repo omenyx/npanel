@@ -15,6 +15,9 @@ export class MigrationJob {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  customerId: string | null;
+
   @Column()
   name: string;
 

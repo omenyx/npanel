@@ -21,6 +21,9 @@ export class User {
   @Column({ type: 'varchar', length: 32 })
   role: UserRole;
 
+  @Column({ type: 'integer', default: 0 })
+  tokenVersion: number;
+
   @CreateDateColumn()
   createdAt: Date;
 }

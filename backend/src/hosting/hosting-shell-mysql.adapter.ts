@@ -249,4 +249,61 @@ export class ShellMysqlAdapter implements MysqlAdapter {
     });
     return {};
   }
+
+  async listDatabases(
+    context: AdapterContext,
+    username: string,
+  ): Promise<string[]> {
+    const safeUser = assertSafeIdentifier(username);
+    const sql = `SHOW DATABASES LIKE '${safeUser}_%'`;
+    const result = await execMysql(this.tools, sql);
+    if (result.code !== 0) {
+      throw new Error(`Failed to list databases: ${result.stderr}`);
+    }
+    const lines = result.stdout.trim().split('\n');
+    return lines
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && line !== 'Database');
+  }
+
+  async resetPassword(
+    context: AdapterContext,
+    username: string,
+    password: string,
+  ): Promise<AdapterOperationResult> {
+    const userIdent = buildUserIdentifier(username);
+    if (!context.dryRun) {
+      try {
+        const sql = `ALTER USER IF EXISTS ${userIdent} IDENTIFIED BY '${escapeSqlString(password)}'`;
+        const result = await execMysql(this.tools, sql);
+        if (result.code !== 0) {
+          throw new Error(`Failed to reset password: ${result.stderr}`);
+        }
+        await execMysql(this.tools, 'FLUSH PRIVILEGES');
+      } catch (err) {
+        await context.log({
+          adapter: 'mysql_shell',
+          operation: 'update',
+          targetKind: 'mysql_account',
+          targetKey: username,
+          success: false,
+          dryRun: false,
+          details: {},
+          errorMessage: err instanceof Error ? err.message : 'Unknown error',
+        });
+        throw err;
+      }
+    }
+    await context.log({
+      adapter: 'mysql_shell',
+      operation: 'update',
+      targetKind: 'mysql_account',
+      targetKey: username,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'password_reset' },
+      errorMessage: null,
+    });
+    return {};
+  }
 }
