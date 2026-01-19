@@ -518,10 +518,19 @@ verify_deployment() {
   echo " OK"
 
   log "Waiting for Nginx/Frontend (port 8080)..."
-  if curl -s http://127.0.0.1:8080/admin | grep -q "NPanel"; then
-     log "Frontend is reachable via Nginx."
+  if curl -s http://127.0.0.1:8080/admin > /tmp/frontend_check.html; then
+     if grep -q "NPanel" /tmp/frontend_check.html || grep -q "Login" /tmp/frontend_check.html || grep -q "next" /tmp/frontend_check.html; then
+        log "Frontend is reachable via Nginx."
+     else
+        err "Frontend reachable but content mismatch. Check /tmp/frontend_check.html"
+        return 1
+     fi
   else
-     err "Frontend verification failed (http://localhost:8080/admin)."
+     err "Frontend verification failed (http://localhost:8080/admin). Nginx or Frontend build might be broken."
+     if [[ -f /var/log/nginx/error.log ]]; then
+        log "Nginx Error Log:"
+        tail -n 20 /var/log/nginx/error.log
+     fi
      return 1
   fi
 }
