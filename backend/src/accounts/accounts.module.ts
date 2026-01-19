@@ -8,5 +8,6 @@ import { AccountsController } from './accounts.controller';
   imports: [TypeOrmModule.forFeature([Customer])],
   providers: [AccountsService],
   controllers: [AccountsController],
+  exports: [AccountsService],
 })
 export class AccountsModule {}
