@@ -12,15 +12,6 @@ import {
 } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
-type ToolStatus = {
-  name: string;
-  available: boolean;
-  path?: string;
-  method?: string;
-  error?: string;
-  packageHint?: string;
-};
-
 type ServerInfo = {
   defaultIpv4: string;
   dnsBackend: string;
@@ -46,7 +37,7 @@ type SystemStats = {
 };
 
 type SystemStatusResponse = {
-  tools: ToolStatus[];
+  tools: unknown;
   serverInfo: ServerInfo;
   systemStats?: SystemStats;
 };

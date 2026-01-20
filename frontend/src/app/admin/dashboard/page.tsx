@@ -4,15 +4,10 @@ import * as React from "react";
 import { Activity, AlertTriangle, HardDrive, Server, Users } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { Button } from "@/shared/ui/button";
-
-type ToolStatus = {
-  name: string;
-  available: boolean;
-  packageHint?: string;
-};
+import { normalizeToolStatusList, type ToolStatusItem } from "@/shared/api/system-status";
 
 type SystemStatusResponse = {
-  tools: ToolStatus[];
+  tools: unknown;
   systemStats?: {
     loadAvg: number[];
     memory: { percent: number; used: number; total: number };
@@ -73,8 +68,14 @@ export default function AdminDashboardPage() {
   const activeCount = services.filter((s) => s.status === "active").length;
   const pendingCount = services.filter((s) => s.status === "provisioning").length;
 
-  const missingTools =
-    status?.tools?.filter((t) => t.available === false).slice(0, 6) ?? [];
+  const toolList = React.useMemo(
+    () => normalizeToolStatusList(status?.tools),
+    [status?.tools],
+  );
+  const missingTools: ToolStatusItem[] = React.useMemo(
+    () => toolList.filter((t) => t.available === false).slice(0, 6),
+    [toolList],
+  );
 
   return (
     <div className="space-y-6">
@@ -242,4 +243,3 @@ function formatBytes(bytes: number) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
-
