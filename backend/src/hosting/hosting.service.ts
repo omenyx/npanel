@@ -375,6 +375,16 @@ export class HostingService implements OnModuleInit {
       service.status = 'provisioning';
       await this.services.save(service);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'system_user',
+        targetKey: username,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'system_user', traceId },
+        errorMessage: null,
+      });
       const userResult = await this.userAdapter.ensurePresent(context, {
         username,
         homeDirectory,
@@ -384,8 +394,28 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(userResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'system_user',
+        targetKey: username,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'document_root', traceId },
+        errorMessage: null,
+      });
       const documentRoot = await this.ensureDocumentRoot(username, homeDirectory);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'php_fpm_pool',
+        targetKey: phpPoolName,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'php_fpm_pool', traceId },
+        errorMessage: null,
+      });
       const phpResult = await this.phpFpmAdapter.ensurePoolPresent(context, {
         name: phpPoolName,
         user: username,
@@ -395,6 +425,16 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(phpResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'web_vhost',
+        targetKey: service.primaryDomain,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'web_vhost', traceId },
+        errorMessage: null,
+      });
       const webResult = await this.webServerAdapter.ensureVhostPresent(context, {
         domain: service.primaryDomain,
         documentRoot,
@@ -403,6 +443,16 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(webResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'mysql_account',
+        targetKey: mysqlUsername,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'mysql_account', traceId },
+        errorMessage: null,
+      });
       const mysqlResult = await this.mysqlAdapter.ensureAccountPresent(context, {
         username: mysqlUsername,
         password: mysqlPassword,
@@ -410,6 +460,16 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(mysqlResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'dns_zone',
+        targetKey: service.primaryDomain,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'dns_zone', traceId },
+        errorMessage: null,
+      });
       const dnsRecords = this.buildDefaultDnsRecords(service.primaryDomain);
       const dnsResult = await this.dnsAdapter.ensureZonePresent(context, {
         zoneName: service.primaryDomain,
@@ -417,6 +477,16 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(dnsResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'mailbox',
+        targetKey: `postmaster@${service.primaryDomain}`,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'mailbox', traceId },
+        errorMessage: null,
+      });
       const mailResult = await this.mailAdapter.ensureMailboxPresent(context, {
         address: `postmaster@${service.primaryDomain}`,
         password: mailboxPassword,
@@ -424,6 +494,16 @@ export class HostingService implements OnModuleInit {
       });
       registerRollback(mailResult.rollback);
 
+      await context.log({
+        adapter: 'hosting',
+        operation: 'update',
+        targetKind: 'ftp_account',
+        targetKey: username,
+        success: true,
+        dryRun: context.dryRun,
+        details: { phase: 'start', step: 'ftp_account', traceId },
+        errorMessage: null,
+      });
       const ftpResult = await this.ftpAdapter.ensureAccountPresent(context, {
         username,
         password: ftpPassword,

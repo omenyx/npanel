@@ -1,42 +1,11 @@
-import { spawn } from 'node:child_process';
 import { ToolResolver } from '../system/tool-resolver';
-import { buildSafeExecEnv } from '../system/exec-env';
+import { execCommand, type ExecResult } from '../system/exec-command';
 import type {
   AdapterContext,
   AdapterOperationResult,
   UserAdapter,
   UserSpec,
 } from './hosting-adapters';
-
-type ExecResult = {
-  code: number;
-  stdout: string;
-  stderr: string;
-};
-
-function execCommand(command: string, args: string[]): Promise<ExecResult> {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: buildSafeExecEnv(),
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on('close', (code) => {
-      resolve({
-        code: code ?? -1,
-        stdout,
-        stderr,
-      });
-    });
-  });
-}
 
 async function userExists(
   tools: ToolResolver,

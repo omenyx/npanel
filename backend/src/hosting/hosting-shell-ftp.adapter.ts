@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import type {
   AdapterContext,
   AdapterOperationResult,
@@ -6,37 +5,7 @@ import type {
   FtpAccountSpec,
 } from './hosting-adapters';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
-import { buildSafeExecEnv } from '../system/exec-env';
-
-type ExecResult = {
-  code: number;
-  stdout: string;
-  stderr: string;
-};
-
-function execCommand(command: string, args: string[]): Promise<ExecResult> {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: buildSafeExecEnv(),
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on('close', (code) => {
-      resolve({
-        code: code ?? -1,
-        stdout,
-        stderr,
-      });
-    });
-  });
-}
+import { execCommand, type ExecResult } from '../system/exec-command';
 
 function getArgsFromEnv(baseEnvName: string, defaultArgs: string[]): string[] {
   const argsValue = process.env[`${baseEnvName}_ARGS`];
