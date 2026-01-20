@@ -134,8 +134,16 @@ export class HostingService implements OnModuleInit {
     }
     let customerId = input.customerId ?? null;
     if (!customerId && input.customer) {
-      const created = await this.accounts.create('operator', { name: input.customer.name, email: input.customer.email });
-      customerId = created.id;
+      const existing = await this.accounts.findByEmail(input.customer.email);
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const created = await this.accounts.create('operator', {
+          name: input.customer.name,
+          email: input.customer.email,
+        });
+        customerId = created.id;
+      }
     }
     if (!customerId) {
       throw new BadRequestException('Customer creation failed');

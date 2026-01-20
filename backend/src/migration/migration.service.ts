@@ -683,24 +683,6 @@ export class MigrationService {
             : null;
         if (knownHostsPath) {
           sshArgs.push('-o', `UserKnownHostsFile=${knownHostsPath}`);
-        } else {
-             // If no known hosts file, we default to StrictHostKeyChecking=no for user convenience in V1
-             // Or we should enforce it. For migration comfort, we might relax it if user didn't provide known hosts.
-             // But existing code said 'StrictHostKeyChecking=yes'.
-             // Let's keep it 'yes' only if knownHosts is provided, otherwise 'no' to avoid failure on new hosts?
-             // Actually, the previous code forced 'yes' and failed if not known.
-             // User requested "allow import ssh key", implies ease of use.
-             // I'll relax to 'no' if no known_hosts provided, or provide a way to accept.
-             // For now, let's keep previous behavior BUT default knownHosts to /dev/null and Strict=no if not provided?
-             // No, that's insecure.
-             // I'll stick to 'no' for convenience in this "Import" flow unless 'knownHostsPath' is explicit.
-             if (!knownHostsPath) {
-                 // Remove the previous 'yes'
-                 sshArgs.pop(); 
-                 sshArgs.pop();
-                 sshArgs.push('-o', 'StrictHostKeyChecking=no');
-                 sshArgs.push('-o', 'UserKnownHostsFile=/dev/null');
-             }
         }
         
         if (sshPort) {

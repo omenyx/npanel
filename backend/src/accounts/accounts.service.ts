@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './customer.entity';
@@ -20,10 +20,20 @@ export class AccountsService {
     return this.customers.findOne({ where: { ownerUserId: userId } });
   }
 
+  async findByEmail(email: string): Promise<Customer | null> {
+    return this.customers.findOne({ where: { email } });
+  }
+
   async create(
     ownerUserId: string,
     input: CreateCustomerDto,
   ): Promise<Customer> {
+    const existing = await this.findByEmail(input.email);
+    if (existing) {
+      throw new BadRequestException(
+        `Customer with email '${input.email}' already exists`,
+      );
+    }
     const entity = this.customers.create({
       name: input.name,
       email: input.email,
