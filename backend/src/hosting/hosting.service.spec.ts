@@ -196,3 +196,64 @@ describe('HostingService provisioning', () => {
   });
 });
 
+describe('HostingService create', () => {
+  let service: HostingService;
+  let servicesRepo: any;
+  let plansRepo: any;
+  let logsRepo: any;
+
+  beforeEach(() => {
+    const s = repo<HostingServiceEntity>();
+    const p = repo<HostingPlan>();
+    const l = repo<HostingLog>();
+    servicesRepo = s;
+    plansRepo = p;
+    logsRepo = l;
+    (plansRepo.items as any[]).push({
+      name: 'basic',
+      diskQuotaMb: 5120,
+      maxDatabases: 3,
+      phpVersion: '8.2',
+      mailboxQuotaMb: 1024,
+      maxMailboxes: 5,
+      maxFtpAccounts: 1,
+    });
+    service = new HostingService(
+      s.r as any,
+      p.r as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      l.r as any,
+      { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
+      {} as any,
+      {} as any,
+    );
+    (servicesRepo.items as any[]).push({
+      id: 'old',
+      customerId: 'c1',
+      primaryDomain: 'sandbox.ionbytes.net',
+      planName: 'basic',
+      status: 'terminated',
+      terminationToken: null,
+      terminationTokenExpiresAt: null,
+    });
+  });
+
+  it('recreates a terminated service for same domain', async () => {
+    const created = await service.create({
+      primaryDomain: 'sandbox.ionbytes.net',
+      planName: 'basic',
+      customerId: 'c1',
+      autoProvision: false,
+    } as any);
+    expect((servicesRepo.items as any[]).length).toBe(1);
+    expect((created as any).primaryDomain).toBe('sandbox.ionbytes.net');
+    expect((servicesRepo.items as any[])[0].id).not.toBe('old');
+  });
+});
+

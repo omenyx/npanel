@@ -127,7 +127,14 @@ export class HostingService implements OnModuleInit {
     }
     const existsForDomain = await this.services.findOne({ where: { primaryDomain: input.primaryDomain } });
     if (existsForDomain) {
-      throw new BadRequestException(`Hosting service for domain '${input.primaryDomain}' already exists`);
+      if (existsForDomain.status === 'terminated') {
+        await this.logs.delete({ serviceId: existsForDomain.id } as any);
+        await this.services.delete({ id: existsForDomain.id } as any);
+      } else {
+        throw new BadRequestException(
+          `Hosting service for domain '${input.primaryDomain}' already exists`,
+        );
+      }
     }
     if (!input.customerId && !input.customer) {
       throw new BadRequestException('Either customerId or customer must be provided');
