@@ -34,6 +34,201 @@ export class MigrationService {
     private readonly hosting: HostingService,
   ) {}
 
+  async sourcePreflight(sourceConfig: Record<string, unknown>) {
+    const host = typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
+    const sshUser =
+      typeof sourceConfig['sshUser'] === 'string' ? sourceConfig['sshUser'] : '';
+    const sshPortValue = sourceConfig['sshPort'];
+    const sshPort =
+      typeof sshPortValue === 'number' && Number.isInteger(sshPortValue)
+        ? sshPortValue
+        : typeof sshPortValue === 'string' && /^\d+$/.test(sshPortValue)
+          ? Number.parseInt(sshPortValue, 10)
+          : 22;
+    const authMethod =
+      typeof sourceConfig['authMethod'] === 'string'
+        ? sourceConfig['authMethod']
+        : 'system';
+    if (!host || !sshUser) {
+      throw new BadRequestException('missing_source_connection_fields');
+    }
+
+    const checks: Array<{
+      name: string;
+      status: 'PASS' | 'FAIL' | 'WARN';
+      details?: Record<string, unknown> | null;
+    }> = [];
+
+    const sshPath = await this.tools.resolve('ssh', {
+      packageHint: 'openssh-client',
+    });
+    checks.push({ name: 'ssh_client_present', status: 'PASS', details: { sshPath } });
+
+    const versionRes = await this.execTool(sshPath, ['-V']).catch((e) => ({
+      code: 1,
+      stdout: '',
+      stderr: e instanceof Error ? e.message : String(e),
+    }));
+    checks.push({
+      name: 'ssh_client_version',
+      status: versionRes.code === 0 ? 'PASS' : 'WARN',
+      details: { stderr: versionRes.stderr?.trim?.() ?? '' },
+    });
+
+    const pingRes = await this.execSshCommand(
+      { ...sourceConfig, host, sshUser, sshPort, authMethod },
+      'echo npanel_ok',
+      { strictHostKey: false, connectTimeoutSeconds: 8 },
+    );
+    checks.push({
+      name: 'ssh_connectivity',
+      status: pingRes.code === 0 && pingRes.stdout.includes('npanel_ok') ? 'PASS' : 'FAIL',
+      details:
+        pingRes.code === 0
+          ? { stdout: pingRes.stdout.trim() }
+          : { code: pingRes.code, stderr: pingRes.stderr.trim() },
+    });
+
+    const cpanelVersionRes =
+      pingRes.code === 0
+        ? await this.execSshCommand(
+            { ...sourceConfig, host, sshUser, sshPort, authMethod },
+            'test -f /usr/local/cpanel/version && cat /usr/local/cpanel/version || echo no_cpanel_version_file',
+            { strictHostKey: false, connectTimeoutSeconds: 8 },
+          )
+        : { code: 1, stdout: '', stderr: 'ssh_unreachable' };
+    const cpanelVersion =
+      cpanelVersionRes.code === 0 ? cpanelVersionRes.stdout.trim() : '';
+    checks.push({
+      name: 'cpanel_detect',
+      status:
+        cpanelVersion && cpanelVersion !== 'no_cpanel_version_file' ? 'PASS' : 'FAIL',
+      details:
+        cpanelVersion && cpanelVersion !== 'no_cpanel_version_file'
+          ? { version: cpanelVersion }
+          : { hint: 'cPanel not detected on source host' },
+    });
+
+    const whmapiRes =
+      pingRes.code === 0
+        ? await this.execSshCommand(
+            { ...sourceConfig, host, sshUser, sshPort, authMethod },
+            'test -x /usr/local/cpanel/bin/whmapi1 && echo whmapi1_ok || echo whmapi1_missing',
+            { strictHostKey: false, connectTimeoutSeconds: 8 },
+          )
+        : { code: 1, stdout: '', stderr: 'ssh_unreachable' };
+    checks.push({
+      name: 'whmapi1_present',
+      status: whmapiRes.code === 0 && whmapiRes.stdout.includes('whmapi1_ok') ? 'PASS' : 'FAIL',
+      details:
+        whmapiRes.code === 0
+          ? { stdout: whmapiRes.stdout.trim() }
+          : { code: whmapiRes.code, stderr: whmapiRes.stderr.trim() },
+    });
+
+    const ok = checks.every((c) => c.status !== 'FAIL');
+    return {
+      ok,
+      source: {
+        host,
+        sshPort,
+        sshUser,
+        authMethod,
+      },
+      panel: {
+        type: 'cpanel',
+        version: cpanelVersion && cpanelVersion !== 'no_cpanel_version_file' ? cpanelVersion : null,
+      },
+      checks,
+    };
+  }
+
+  async discoverSourceAccounts(sourceConfig: Record<string, unknown>) {
+    const host = typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
+    const sshUser =
+      typeof sourceConfig['sshUser'] === 'string' ? sourceConfig['sshUser'] : '';
+    const sshPortValue = sourceConfig['sshPort'];
+    const sshPort =
+      typeof sshPortValue === 'number' && Number.isInteger(sshPortValue)
+        ? sshPortValue
+        : typeof sshPortValue === 'string' && /^\d+$/.test(sshPortValue)
+          ? Number.parseInt(sshPortValue, 10)
+          : 22;
+    const authMethod =
+      typeof sourceConfig['authMethod'] === 'string'
+        ? sourceConfig['authMethod']
+        : 'system';
+    if (!host || !sshUser) {
+      throw new BadRequestException('missing_source_connection_fields');
+    }
+
+    const listRes = await this.execSshCommand(
+      { ...sourceConfig, host, sshUser, sshPort, authMethod },
+      '/usr/local/cpanel/bin/whmapi1 listaccts --output=json',
+      { strictHostKey: false, connectTimeoutSeconds: 12 },
+    );
+    if (listRes.code !== 0) {
+      const err = new Error('source_account_discovery_failed') as Error & { details?: unknown };
+      err.details = { code: listRes.code, stderr: listRes.stderr, stdout: listRes.stdout };
+      throw err;
+    }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(listRes.stdout);
+    } catch {
+      const err = new Error('source_account_discovery_invalid_json') as Error & { details?: unknown };
+      err.details = { sample: listRes.stdout.slice(0, 500) };
+      throw err;
+    }
+    const acctList: any[] = Array.isArray(parsed?.data?.acct) ? parsed.data.acct : [];
+    const accounts = acctList
+      .map((acct) => {
+        const username = typeof acct?.user === 'string' ? acct.user : '';
+        const primaryDomain = typeof acct?.domain === 'string' ? acct.domain : '';
+        const plan = typeof acct?.plan === 'string' ? acct.plan : null;
+        const suspendedRaw = acct?.suspended;
+        const suspended =
+          suspendedRaw === 1 || suspendedRaw === '1' || suspendedRaw === true;
+        const diskUsedRaw = acct?.diskused;
+        const diskUsageMb =
+          typeof diskUsedRaw === 'number'
+            ? diskUsedRaw
+            : typeof diskUsedRaw === 'string'
+              ? Number.parseFloat(diskUsedRaw)
+              : null;
+        return {
+          username,
+          primaryDomain,
+          plan,
+          status: suspended ? 'suspended' : 'active',
+          diskUsageMb: Number.isFinite(diskUsageMb as any) ? (diskUsageMb as number) : null,
+        };
+      })
+      .filter((a) => a.username && a.primaryDomain);
+
+    const domains = accounts.map((a) => a.primaryDomain);
+    const existing = await this.hosting.list();
+    const existingDomains = new Set(existing.map((s) => s.primaryDomain));
+    const enriched = accounts.map((a) => ({
+      ...a,
+      conflicts: {
+        domainExists: existingDomains.has(a.primaryDomain),
+      },
+    }));
+
+    return {
+      source: { host, sshPort, sshUser, authMethod },
+      accounts: enriched,
+      totals: {
+        count: enriched.length,
+        selectedBytesEstimate: null,
+      },
+      conflictsSummary: {
+        domainConflicts: enriched.filter((a) => a.conflicts.domainExists).length,
+      },
+    };
+  }
+
   async createJob(input: CreateMigrationJobDto): Promise<MigrationJob> {
     const job = this.jobs.create({
       customerId: null,
@@ -49,6 +244,15 @@ export class MigrationService {
       dryRun: saved.dryRun,
     });
     return saved;
+  }
+
+  async createJobWithAccounts(input: CreateMigrationJobDto, accounts: AddMigrationAccountDto[]) {
+    const job = await this.createJob(input);
+    const created: MigrationAccount[] = [];
+    for (const account of accounts) {
+      created.push(await this.addAccount(job.id, account));
+    }
+    return { job, accounts: created };
   }
 
   async createJobForCustomer(
@@ -807,6 +1011,97 @@ export class MigrationService {
         });
       });
     });
+  }
+
+  private execTool(
+    command: string,
+    args: string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: buildSafeExecEnv(),
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      child.on('close', (code) => {
+        resolve({ code: code ?? -1, stdout, stderr });
+      });
+    });
+  }
+
+  private async execSshCommand(
+    sourceConfig: Record<string, unknown>,
+    remoteCommand: string,
+    opts?: { strictHostKey?: boolean; connectTimeoutSeconds?: number },
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    const host = sourceConfig['host'] as string;
+    const sshUser = sourceConfig['sshUser'] as string;
+    const sshPort = (sourceConfig['sshPort'] as number | undefined) ?? 22;
+    const strictHostKey = opts?.strictHostKey ?? false;
+    const connectTimeoutSeconds = opts?.connectTimeoutSeconds ?? 10;
+    const knownHostsPathValue = sourceConfig['knownHostsPath'];
+    const knownHostsPath =
+      typeof knownHostsPathValue === 'string' && knownHostsPathValue.length > 0
+        ? knownHostsPathValue
+        : null;
+
+    let sshKeyPath =
+      typeof sourceConfig['sshKeyPath'] === 'string' &&
+      (sourceConfig['sshKeyPath'] as string).length > 0
+        ? (sourceConfig['sshKeyPath'] as string)
+        : null;
+    const sshKeyContent = sourceConfig['sshKey'] as string | undefined;
+    const sshPassword = sourceConfig['sshPassword'] as string | undefined;
+    let tempKeyPath: string | null = null;
+    if (!sshKeyPath && sshKeyContent && sshKeyContent.trim().length > 0) {
+      const tmpDir = process.env.NPANEL_TEMP_DIR || '/tmp';
+      const rnd = randomBytes(16).toString('hex');
+      tempKeyPath = join(tmpDir, `mig_key_${rnd}`);
+      await writeFile(tempKeyPath, sshKeyContent, { mode: 0o600 });
+      sshKeyPath = tempKeyPath;
+    }
+
+    try {
+      const sshPath = await this.tools.resolve('ssh', {
+        packageHint: 'openssh-client',
+      });
+      const sshArgs: string[] = [
+        '-p',
+        String(sshPort),
+        '-o',
+        `ConnectTimeout=${connectTimeoutSeconds}`,
+      ];
+      if (knownHostsPath) {
+        sshArgs.push('-o', `UserKnownHostsFile=${knownHostsPath}`);
+      }
+      sshArgs.push(
+        '-o',
+        `StrictHostKeyChecking=${strictHostKey ? 'yes' : 'no'}`,
+      );
+      if (sshKeyPath) {
+        sshArgs.push('-i', sshKeyPath);
+      }
+      sshArgs.push(`${sshUser}@${host}`, remoteCommand);
+
+      if (sshPassword && !sshKeyPath) {
+        const sshpassBin = await this.tools.resolve('sshpass', {
+          packageHint: 'sshpass',
+        });
+        return this.execTool(sshpassBin, ['-p', sshPassword, sshPath, ...sshArgs]);
+      }
+      return this.execTool(sshPath, sshArgs);
+    } finally {
+      if (tempKeyPath) {
+        await rm(tempKeyPath, { force: true }).catch(() => {});
+      }
+    }
   }
 
   private async refreshJobStatus(job: MigrationJob): Promise<void> {

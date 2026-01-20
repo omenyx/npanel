@@ -40,6 +40,28 @@ type MigrationLog = {
   createdAt: string;
 };
 
+type Customer = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type SourcePreflight = {
+  ok: boolean;
+  source: { host: string; sshPort: number; sshUser: string; authMethod: string };
+  panel: { type: string; version: string | null };
+  checks: Array<{ name: string; status: "PASS" | "FAIL" | "WARN"; details?: any }>;
+};
+
+type DiscoveredAccount = {
+  username: string;
+  primaryDomain: string;
+  plan: string | null;
+  status: "active" | "suspended";
+  diskUsageMb: number | null;
+  conflicts: { domainExists: boolean };
+};
+
 export function AdminTransfersScreen() {
   const [transfers, setTransfers] = useState<MigrationJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,10 +78,26 @@ export function AdminTransfersScreen() {
     authMethod: "system",
     sourcePassword: "",
     sourceKey: "",
-    sourceUsername: "",
-    sourceDomain: "",
     dryRun: true,
+    targetCustomerId: "",
+    planName: "basic",
   });
+  const [wizardStep, setWizardStep] = useState<
+    "connection" | "discovery" | "selection"
+  >("connection");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [preflight, setPreflight] = useState<SourcePreflight | null>(null);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>(
+    [],
+  );
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [accountSearch, setAccountSearch] = useState("");
+  const [showConflictsOnly, setShowConflictsOnly] = useState(false);
+  const [showSuspended, setShowSuspended] = useState(true);
+  const [preflightRunning, setPreflightRunning] = useState(false);
+  const [discoveryRunning, setDiscoveryRunning] = useState(false);
 
   const [selectedJob, setSelectedJob] = useState<MigrationJob | null>(null);
   const [steps, setSteps] = useState<MigrationStep[]>([]);
@@ -127,6 +165,16 @@ export function AdminTransfersScreen() {
   useEffect(() => {
     if (showWizard) {
       fetchSshKey();
+      setWizardStep("connection");
+      setPreflight(null);
+      setDiscoveredAccounts([]);
+      setSelectedAccounts(new Set());
+      setAccountSearch("");
+      setShowConflictsOnly(false);
+      setShowSuspended(true);
+      requestJson<Customer[]>("/v1/customers")
+        .then((data) => setCustomers(data))
+        .catch(() => setCustomers([]));
     }
   }, [showWizard]);
 
@@ -179,6 +227,68 @@ export function AdminTransfersScreen() {
     }
   };
 
+  const runPreflight = async () => {
+    setPreflightRunning(true);
+    setError(null);
+    setPreflight(null);
+    try {
+      const token = getAccessToken();
+      if (!token) return;
+      const res = await requestJson<SourcePreflight>("/v1/migrations/source/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: formData.sourceHost,
+          sshPort: Number(formData.sourcePort),
+          sshUser: formData.sourceUser,
+          authMethod: formData.authMethod,
+          sshPassword: formData.authMethod === "password" ? formData.sourcePassword : undefined,
+          sshKey: formData.authMethod === "key" ? formData.sourceKey : undefined,
+        }),
+      });
+      setPreflight(res);
+      if (res.ok) {
+        setWizardStep("discovery");
+      }
+    } catch (err: any) {
+      setError(err.message ?? "Preflight failed");
+    } finally {
+      setPreflightRunning(false);
+    }
+  };
+
+  const runDiscovery = async () => {
+    setDiscoveryRunning(true);
+    setError(null);
+    setDiscoveredAccounts([]);
+    setSelectedAccounts(new Set());
+    try {
+      const token = getAccessToken();
+      if (!token) return;
+      const res = await requestJson<{ accounts: DiscoveredAccount[] }>(
+        "/v1/migrations/source/accounts",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host: formData.sourceHost,
+            sshPort: Number(formData.sourcePort),
+            sshUser: formData.sourceUser,
+            authMethod: formData.authMethod,
+            sshPassword: formData.authMethod === "password" ? formData.sourcePassword : undefined,
+            sshKey: formData.authMethod === "key" ? formData.sourceKey : undefined,
+          }),
+        },
+      );
+      setDiscoveredAccounts(res.accounts ?? []);
+      setWizardStep("selection");
+    } catch (err: any) {
+      setError(err.message ?? "Discovery failed");
+    } finally {
+      setDiscoveryRunning(false);
+    }
+  };
+
   const handleCreateTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
@@ -188,79 +298,66 @@ export function AdminTransfersScreen() {
     if (!token) return;
 
     try {
-      const createConfirmation = await requestJson<GovernedConfirmation>("/v1/migrations/prepare-create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          sourceType: "cpanel_live_ssh",
-          sourceConfig: {
-            host: formData.sourceHost,
-            sshUser: formData.sourceUser,
-            sshPort: Number(formData.sourcePort),
-            sshPassword:
-              formData.authMethod === "password"
-                ? formData.sourcePassword
-                : undefined,
-            sshKey: formData.authMethod === "key" ? formData.sourceKey : undefined,
-          },
-          dryRun: formData.dryRun,
-        }),
-      });
-      setActionDialogTitle("Confirm Transfer Job Create");
-      setActionConfirmation(createConfirmation);
-      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
-        const created = await requestJson<GovernedResult<any>>("/v1/migrations/confirm-create", {
+      const selected = discoveredAccounts.filter((a) => selectedAccounts.has(a.username));
+      if (!formData.targetCustomerId) {
+        throw new Error("Select a target customer");
+      }
+      if (selected.length === 0) {
+        throw new Error("Select at least one account");
+      }
+      const createConfirmation = await requestJson<GovernedConfirmation>(
+        "/v1/migrations/prepare-create-from-source",
+        {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intentId, token: confirmToken }),
-        });
-        if (created.status !== "SUCCESS") return created;
-        const jobId = created.result?.id as string | undefined;
-        if (!jobId) return created;
-
-        const addAccountConfirmation = await requestJson<GovernedConfirmation>(
-          `/v1/migrations/${jobId}/accounts/prepare-add`,
+          body: JSON.stringify({
+            name: formData.name,
+            sourceType: "cpanel_live_ssh",
+            sourceConfig: {
+              host: formData.sourceHost,
+              sshUser: formData.sourceUser,
+              sshPort: Number(formData.sourcePort),
+              authMethod: formData.authMethod,
+              sshPassword: formData.authMethod === "password" ? formData.sourcePassword : undefined,
+              sshKey: formData.authMethod === "key" ? formData.sourceKey : undefined,
+              planName: formData.planName || "basic",
+            },
+            dryRun: formData.dryRun,
+            accounts: selected.map((a) => ({
+              sourceUsername: a.username,
+              sourcePrimaryDomain: a.primaryDomain,
+              targetCustomerId: formData.targetCustomerId,
+            })),
+          }),
+        },
+      );
+      setActionDialogTitle("Confirm Transfer Plan");
+      setActionConfirmation(createConfirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const created = await requestJson<GovernedResult<any>>(
+          "/v1/migrations/confirm-create-from-source",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sourceUsername: formData.sourceUsername,
-              sourcePrimaryDomain: formData.sourceDomain,
-            }),
+            body: JSON.stringify({ intentId, token: confirmToken }),
           },
         );
-        setActionDialogTitle("Confirm Transfer Account Add");
-        setActionConfirmation(addAccountConfirmation);
-        setConfirmFn(() => async (intentId2: string, confirmToken2: string) => {
-          const added = await requestJson<GovernedResult<any>>(
-            `/v1/migrations/${jobId}/accounts/confirm-add`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ intentId: intentId2, token: confirmToken2 }),
-            },
-          );
-          if (added.status === "SUCCESS") {
-            setShowWizard(false);
-            setFormData({
-              name: "",
-              sourceHost: "",
-              sourcePort: 22,
-              sourceUser: "root",
-              authMethod: "system",
-              sourcePassword: "",
-              sourceKey: "",
-              sourceUsername: "",
-              sourceDomain: "",
-              dryRun: true,
-            });
-            fetchData();
-          }
-          return added;
-        });
+        if (created.status === "SUCCESS") {
+          setShowWizard(false);
+          setFormData({
+            name: "",
+            sourceHost: "",
+            sourcePort: 22,
+            sourceUser: "root",
+            authMethod: "system",
+            sourcePassword: "",
+            sourceKey: "",
+            dryRun: true,
+            targetCustomerId: "",
+            planName: "basic",
+          });
+          fetchData();
+        }
         return created;
       });
       setActionDialogOpen(true);
@@ -624,42 +721,246 @@ export function AdminTransfersScreen() {
 
               <div className="border-t border-border my-4"></div>
 
-              <div className="space-y-4">
-                <h4 className="text-xs uppercase text-success font-semibold tracking-wider">
-                  Account to Migrate
-                </h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="label-text">Source Username</label>
-                    <input
-                      type="text"
-                      placeholder="cpaneluser"
-                      value={formData.sourceUsername}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          sourceUsername: e.target.value,
-                        })
-                      }
-                      className="input-field"
-                      required
-                    />
+              {preflight ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-text-main">
+                    Preflight {preflight.ok ? "PASS" : "FAIL"}
                   </div>
-                  <div>
-                    <label className="label-text">Primary Domain</label>
-                    <input
-                      type="text"
-                      placeholder="example.com"
-                      value={formData.sourceDomain}
-                      onChange={(e) =>
-                        setFormData({ ...formData, sourceDomain: e.target.value })
-                      }
-                      className="input-field"
-                      required
-                    />
+                  <div className="grid gap-2">
+                    {preflight.checks.map((c) => (
+                      <div
+                        key={c.name}
+                        className={`rounded-[var(--radius-card)] border px-3 py-2 text-xs ${
+                          c.status === "PASS"
+                            ? "border-success/20 bg-success/5 text-success"
+                            : c.status === "WARN"
+                              ? "border-warning/20 bg-warning/5 text-warning"
+                              : "border-danger/20 bg-danger/5 text-danger"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{c.name}</span>
+                          <span className="text-[10px] uppercase">{c.status}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              ) : null}
+
+              {wizardStep === "connection" && (
+                <div className="flex gap-3 justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={runPreflight}
+                    className="btn-primary"
+                    disabled={preflightRunning}
+                  >
+                    {preflightRunning ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Running Preflight...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-4 w-4" />
+                        Run Preflight
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {wizardStep === "discovery" && (
+                <div className="space-y-3">
+                  <div className="text-xs text-text-muted">
+                    Preflight passed. Discover accounts from the source server.
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setWizardStep("connection")}
+                      className="btn-secondary"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={runDiscovery}
+                      className="btn-primary"
+                      disabled={discoveryRunning}
+                    >
+                      {discoveryRunning ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Discovering...
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4" />
+                          Discover Accounts
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {wizardStep === "selection" && (
+                <div className="space-y-3">
+                  <div className="text-xs font-semibold text-text-main">
+                    Select Accounts
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Search username or domain"
+                      value={accountSearch}
+                      onChange={(e) => setAccountSearch(e.target.value)}
+                      className="input-field"
+                    />
+                    <select
+                      className="input-field"
+                      value={formData.targetCustomerId}
+                      onChange={(e) =>
+                        setFormData({ ...formData, targetCustomerId: e.target.value })
+                      }
+                    >
+                      <option value="">Select target customer</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      className="input-field"
+                      value={formData.planName}
+                      onChange={(e) => setFormData({ ...formData, planName: e.target.value })}
+                    >
+                      <option value="basic">Plan: basic</option>
+                      <option value="pro">Plan: pro</option>
+                    </select>
+                    <div className="flex items-center gap-3 text-xs text-text-muted">
+                      <label className="flex items-center gap-2 select-none">
+                        <input
+                          type="checkbox"
+                          checked={showConflictsOnly}
+                          onChange={(e) => setShowConflictsOnly(e.target.checked)}
+                          className="rounded border-border bg-surface text-primary focus:ring-primary"
+                        />
+                        Conflicts only
+                      </label>
+                      <label className="flex items-center gap-2 select-none">
+                        <input
+                          type="checkbox"
+                          checked={showSuspended}
+                          onChange={(e) => setShowSuspended(e.target.checked)}
+                          className="rounded border-border bg-surface text-primary focus:ring-primary"
+                        />
+                        Include suspended
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => {
+                        const next = new Set<string>();
+                        const filtered = discoveredAccounts.filter((a) => {
+                          if (!showSuspended && a.status === "suspended") return false;
+                          if (showConflictsOnly && !a.conflicts.domainExists) return false;
+                          const q = accountSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            a.username.toLowerCase().includes(q) ||
+                            a.primaryDomain.toLowerCase().includes(q)
+                          );
+                        });
+                        filtered.forEach((a) => next.add(a.username));
+                        setSelectedAccounts(next);
+                      }}
+                    >
+                      Tick all
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => setSelectedAccounts(new Set())}
+                    >
+                      Untick all
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => setWizardStep("discovery")}
+                    >
+                      Back
+                    </button>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto border border-border rounded-[var(--radius-card)]">
+                    {discoveredAccounts
+                      .filter((a) => {
+                        if (!showSuspended && a.status === "suspended") return false;
+                        if (showConflictsOnly && !a.conflicts.domainExists) return false;
+                        const q = accountSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          a.username.toLowerCase().includes(q) ||
+                          a.primaryDomain.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((a) => (
+                        <label
+                          key={a.username}
+                          className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border last:border-b-0 text-xs text-text-main cursor-pointer select-none"
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedAccounts.has(a.username)}
+                              onChange={(e) => {
+                                const next = new Set(selectedAccounts);
+                                if (e.target.checked) next.add(a.username);
+                                else next.delete(a.username);
+                                setSelectedAccounts(next);
+                              }}
+                              className="rounded border-border bg-surface text-primary focus:ring-primary"
+                            />
+                            <div>
+                              <div className="font-medium">
+                                {a.username}{" "}
+                                {a.conflicts.domainExists ? (
+                                  <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded border bg-danger/10 text-danger border-danger/20">
+                                    domain conflict
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-[10px] text-text-muted">
+                                {a.primaryDomain} · {a.status}
+                                {a.diskUsageMb != null ? ` · ${a.diskUsageMb.toFixed(0)} MB` : ""}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-text-muted">
+                            {a.plan ?? "unknown plan"}
+                          </div>
+                        </label>
+                      ))}
+                    {discoveredAccounts.length === 0 && (
+                      <div className="px-3 py-3 text-xs text-text-muted">
+                        No accounts returned from source.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 pt-2">
                 <input
@@ -685,19 +986,21 @@ export function AdminTransfersScreen() {
                 >
                   Cancel
                 </button>
-                <button type="submit" disabled={creating} className="btn-primary">
-                  {creating ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4" />
-                      Create Job
-                    </>
-                  )}
-                </button>
+                {wizardStep === "selection" && (
+                  <button type="submit" disabled={creating} className="btn-primary">
+                    {creating ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        Create Job
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </form>
           </div>

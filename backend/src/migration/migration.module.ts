@@ -7,6 +7,7 @@ import { MigrationLog } from './migration-log.entity';
 import { MigrationService } from './migration.service';
 import { MigrationController } from './migration.controller';
 import { CustomerMigrationController } from './customer-migration.controller';
+import { MigrationSourceController } from './migration-source.controller';
 import { SystemModule } from '../system/system.module';
 import { HostingModule } from '../hosting/hosting.module';
 import { AccountsModule } from '../accounts/accounts.module';
@@ -23,7 +24,7 @@ import { AccountsModule } from '../accounts/accounts.module';
     HostingModule,
     AccountsModule,
   ],
-  controllers: [MigrationController, CustomerMigrationController],
+  controllers: [MigrationController, CustomerMigrationController, MigrationSourceController],
   providers: [MigrationService],
 })
 export class MigrationModule {}

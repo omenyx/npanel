@@ -11,6 +11,7 @@ import {
 import { MigrationService } from './migration.service';
 import { CreateMigrationJobDto } from './dto/create-migration-job.dto';
 import { AddMigrationAccountDto } from './dto/add-migration-account.dto';
+import { CreateMigrationFromSourceDto } from './dto/create-migration-from-source.dto';
 import { JwtAuthGuard } from '../iam/jwt-auth.guard';
 import { RolesGuard } from '../iam/roles.guard';
 import { Roles } from '../iam/roles.decorator';
@@ -94,6 +95,57 @@ export class MigrationController {
       impactedSubsystems: ['control_plane_db', 'remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
       actor: { actorRole: 'ADMIN', actorType: 'admin' },
     });
+  }
+
+  @Post('prepare-create-from-source')
+  @HttpCode(HttpStatus.OK)
+  async prepareCreateFromSource(@Body() body: CreateMigrationFromSourceDto) {
+    return this.governance.prepare({
+      module: 'migrations',
+      action: 'create_migration_from_source',
+      targetKind: 'migration_job',
+      targetKey: body.name,
+      payload: body as any,
+      risk: 'high',
+      reversibility: 'requires_restore',
+      impactedSubsystems: ['control_plane_db', 'remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
+      actor: { actorRole: 'ADMIN', actorType: 'admin' },
+    });
+  }
+
+  @Post('confirm-create-from-source')
+  @HttpCode(HttpStatus.OK)
+  async confirmCreateFromSource(@Body() body: { intentId: string; token: string }) {
+    const intent = await this.governance.verify(body.intentId, body.token);
+    const steps: ActionStep[] = [
+      { name: 'create_migration_job', status: 'SUCCESS' },
+      { name: 'add_accounts', status: 'SUCCESS' },
+    ];
+    try {
+      const payload = intent.payload as any;
+      const input: CreateMigrationJobDto = {
+        name: payload.name,
+        sourceType: payload.sourceType,
+        sourceConfig: payload.sourceConfig,
+        dryRun: payload.dryRun,
+      };
+      const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const created = await this.migrations.createJobWithAccounts(input, accounts);
+      const result = {
+        id: created.job.id,
+        name: created.job.name,
+        status: created.job.status,
+        sourceType: created.job.sourceType,
+        dryRun: created.job.dryRun,
+        createdAt: created.job.createdAt,
+        accountsCreated: created.accounts.length,
+      };
+      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+    } catch (e) {
+      steps[0] = { name: 'create_migration_job', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
+      steps[1] = { name: 'add_accounts', status: 'SKIPPED' };
+      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+    }
   }
 
   @Post('confirm-create')
