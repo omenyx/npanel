@@ -41,6 +41,13 @@ import { buildSafeExecEnv } from '../system/exec-env';
 
 const execAsync = promisify(exec);
 
+type ActionMeta = {
+  actorId?: string;
+  actorRole?: string;
+  actorType?: string;
+  reason?: string;
+};
+
 @Injectable()
 export class HostingService implements OnModuleInit {
   constructor(
@@ -120,7 +127,7 @@ export class HostingService implements OnModuleInit {
     });
   }
 
-  async create(input: CreateHostingServiceDto): Promise<HostingServiceEntity | { service: HostingServiceEntity; credentials: { username: string; mysqlUsername: string; mysqlPassword: string; mailboxPassword: string; ftpPassword: string } }> {
+  async create(input: CreateHostingServiceDto, meta?: ActionMeta): Promise<HostingServiceEntity | { service: HostingServiceEntity; credentials: { username: string; mysqlUsername: string; mysqlPassword: string; mailboxPassword: string; ftpPassword: string } }> {
     const planName = input.planName ?? 'basic';
     const plan = await this.plans.findOne({ where: { name: planName } });
     if (!plan) {
@@ -129,7 +136,6 @@ export class HostingService implements OnModuleInit {
     const existsForDomain = await this.services.findOne({ where: { primaryDomain: input.primaryDomain } });
     if (existsForDomain) {
       if (existsForDomain.status === 'terminated') {
-        await this.logs.delete({ serviceId: existsForDomain.id } as any);
         await this.services.delete({ id: existsForDomain.id } as any);
       } else {
         throw new BadRequestException(
@@ -162,14 +168,33 @@ export class HostingService implements OnModuleInit {
       primaryDomain: input.primaryDomain,
       planName: plan.name,
       status: 'provisioning',
+      softDeletedAt: null,
+      hardDeleteEligibleAt: null,
     });
     const saved = await this.services.save(entity);
+    const createContext = this.buildAdapterContext(saved);
+    await createContext.log({
+      adapter: 'hosting',
+      operation: 'create',
+      targetKind: 'hosting_service',
+      targetKey: saved.id,
+      success: true,
+      dryRun: createContext.dryRun,
+      details: {
+        action: 'create',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
+      errorMessage: null,
+    });
     if (input.autoProvision === true) {
       const readiness = await this.checkToolReadinessForProvision();
       if (readiness.missing.length > 0) {
         throw new BadRequestException(`Auto-provision blocked; missing tools: ${readiness.missing.join(', ')}`);
       }
-      const provisioned = await this.provisionWithCredentials(saved.id);
+      const provisioned = await this.provisionWithCredentials(saved.id, meta);
       return provisioned;
     }
     return saved;
@@ -198,12 +223,12 @@ export class HostingService implements OnModuleInit {
     });
   }
 
-  async provision(id: string): Promise<HostingServiceEntity> {
-    const result = await this.provisionInternal(id, { returnCredentials: false });
+  async provision(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+    const result = await this.provisionInternal(id, { returnCredentials: false, meta });
     return result.service;
   }
 
-  async provisionWithCredentials(id: string): Promise<{
+  async provisionWithCredentials(id: string, meta?: ActionMeta): Promise<{
     service: HostingServiceEntity;
     credentials: {
       username: string;
@@ -213,7 +238,7 @@ export class HostingService implements OnModuleInit {
       ftpPassword: string;
     };
   }> {
-    const result = await this.provisionInternal(id, { returnCredentials: true });
+    const result = await this.provisionInternal(id, { returnCredentials: true, meta });
     if (!result.credentials) {
       throw new Error('credentials_unavailable');
     }
@@ -270,7 +295,7 @@ export class HostingService implements OnModuleInit {
 
   private async provisionInternal(
     id: string,
-    opts: { returnCredentials: boolean },
+    opts: { returnCredentials: boolean; meta?: ActionMeta },
   ): Promise<{
     service: HostingServiceEntity;
     credentials?: {
@@ -418,6 +443,10 @@ export class HostingService implements OnModuleInit {
         details: {
           action: 'provision',
           traceId,
+          actorId: opts.meta?.actorId ?? null,
+          actorRole: opts.meta?.actorRole ?? null,
+          actorType: opts.meta?.actorType ?? null,
+          reason: opts.meta?.reason ?? null,
         },
         errorMessage: null,
       });
@@ -480,6 +509,7 @@ export class HostingService implements OnModuleInit {
   async initCredentials(
     id: string,
     input: { mailboxPassword?: string; ftpPassword?: string },
+    meta?: ActionMeta,
   ): Promise<{ service: HostingServiceEntity; mailboxPassword: string; ftpPassword: string }> {
     const service = await this.get(id);
     const readiness = await this.checkToolReadinessForProvision();
@@ -506,10 +536,26 @@ export class HostingService implements OnModuleInit {
       password: ftpPassword,
       homeDirectory: `/home/${username}`,
     });
+    await context.log({
+      adapter: 'hosting',
+      operation: 'update',
+      targetKind: 'web_vhost',
+      targetKey: service.id,
+      success: true,
+      dryRun: context.dryRun,
+      details: {
+        action: 'init_credentials',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
+      errorMessage: null,
+    });
     return { service, mailboxPassword, ftpPassword };
   }
 
-  async suspend(id: string): Promise<HostingServiceEntity> {
+  async suspend(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
     const service = await this.get(id);
     if (service.status !== 'active') {
       return service;
@@ -532,13 +578,108 @@ export class HostingService implements OnModuleInit {
       dryRun: context.dryRun,
       details: {
         action: 'suspend',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
       },
       errorMessage: null,
     });
     return saved;
   }
 
-  async unsuspend(id: string): Promise<HostingServiceEntity> {
+  async softDelete(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+    const service = await this.get(id);
+    if (service.status !== 'active') {
+      throw new BadRequestException('Soft delete is only allowed for active services');
+    }
+    const context = this.buildAdapterContext(service);
+    const username = this.deriveSystemUsername(service);
+
+    await this.userAdapter.ensureSuspended(context, username);
+    await this.webServerAdapter.ensureVhostSuspended(context, service.primaryDomain);
+
+    const mailboxRotatePassword = this.credentials.generateMailboxPassword();
+    const mysqlRotatePassword = this.credentials.generateDatabasePassword();
+    const ftpRotatePassword = this.credentials.generateFtpPassword();
+    const mysqlUsername = `${username}_db`;
+    const mailboxes = await this.mailAdapter.listMailboxes(context, service.primaryDomain);
+    for (const address of mailboxes) {
+      if (typeof address === 'string' && address.endsWith(`@${service.primaryDomain}`)) {
+        await this.mailAdapter.updatePassword(context, address, mailboxRotatePassword);
+      }
+    }
+    await this.mysqlAdapter.resetPassword(context, mysqlUsername, mysqlRotatePassword);
+    await this.ftpAdapter.resetPassword(context, username, ftpRotatePassword);
+
+    const retentionHoursRaw = process.env.NPANEL_SOFT_DELETE_RETENTION_HOURS;
+    const retentionHours =
+      typeof retentionHoursRaw === 'string' && retentionHoursRaw.trim().length > 0
+        ? Number.parseInt(retentionHoursRaw, 10)
+        : 168;
+    const hours = Number.isFinite(retentionHours) && retentionHours >= 1 ? retentionHours : 168;
+    service.status = 'soft_deleted';
+    service.softDeletedAt = new Date();
+    service.hardDeleteEligibleAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const saved = await this.services.save(service);
+    await context.log({
+      adapter: 'hosting',
+      operation: 'update',
+      targetKind: 'web_vhost',
+      targetKey: service.id,
+      success: true,
+      dryRun: context.dryRun,
+      details: {
+        action: 'soft_delete',
+        hardDeleteEligibleAt: saved.hardDeleteEligibleAt?.toISOString() ?? null,
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
+      errorMessage: null,
+    });
+    return saved;
+  }
+
+  async restore(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+    const service = await this.get(id);
+    if (service.status !== 'soft_deleted') {
+      throw new BadRequestException('Restore is only allowed for soft-deleted services');
+    }
+    const context = this.buildAdapterContext(service);
+    const username = this.deriveSystemUsername(service);
+    await this.userAdapter.ensureResumed(context, username);
+    await this.webServerAdapter.ensureVhostPresent(context, {
+      domain: service.primaryDomain,
+      documentRoot: `/home/${username}/public_html`,
+      phpFpmPool: username,
+      sslCertificateId: null,
+    });
+    service.status = 'active';
+    service.softDeletedAt = null;
+    service.hardDeleteEligibleAt = null;
+    const saved = await this.services.save(service);
+    await context.log({
+      adapter: 'hosting',
+      operation: 'update',
+      targetKind: 'web_vhost',
+      targetKey: service.id,
+      success: true,
+      dryRun: context.dryRun,
+      details: {
+        action: 'restore',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
+      errorMessage: null,
+    });
+    return saved;
+  }
+
+  async unsuspend(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
     const service = await this.get(id);
     if (service.status !== 'suspended') {
       return service;
@@ -568,6 +709,10 @@ export class HostingService implements OnModuleInit {
       dryRun: context.dryRun,
       details: {
         action: 'unsuspend',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
       },
       errorMessage: null,
     });
@@ -578,12 +723,14 @@ export class HostingService implements OnModuleInit {
     throw new BadRequestException('Termination requires prepare and confirm');
   }
 
-  async terminatePrepare(id: string): Promise<{ token: string; service: HostingServiceEntity }> {
+  async terminatePrepare(id: string, meta?: ActionMeta): Promise<{ token: string; service: HostingServiceEntity }> {
     const service = await this.get(id);
-    if (service.status === 'terminated') {
-      throw new BadRequestException('Service already terminated');
+    if (service.status !== 'soft_deleted') {
+      throw new BadRequestException('Hard delete requires soft delete first');
     }
-    service.status = 'termination_pending';
+    if (service.hardDeleteEligibleAt && service.hardDeleteEligibleAt.getTime() > Date.now()) {
+      throw new BadRequestException('Hard delete blocked by retention window');
+    }
     const token = randomBytes(24).toString('hex');
     service.terminationToken = token;
     service.terminationTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -596,7 +743,13 @@ export class HostingService implements OnModuleInit {
       targetKey: saved.primaryDomain,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'termination_prepare' },
+      details: {
+        action: 'hard_delete_prepare',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
       errorMessage: null,
     });
     return { token, service: saved };
@@ -605,11 +758,11 @@ export class HostingService implements OnModuleInit {
   async terminateConfirm(
     id: string,
     token: string,
-    opts?: { purge?: boolean },
+    opts?: { purge?: boolean; meta?: ActionMeta },
   ): Promise<HostingServiceEntity> {
     const service = await this.get(id);
-    if (service.status !== 'termination_pending') {
-      throw new BadRequestException('Termination is not pending');
+    if (service.status !== 'soft_deleted') {
+      throw new BadRequestException('Hard delete requires soft delete first');
     }
     if (!service.terminationToken || !service.terminationTokenExpiresAt) {
       throw new BadRequestException('Missing termination token');
@@ -626,6 +779,69 @@ export class HostingService implements OnModuleInit {
     const homeDirectory = `/home/${username}`;
     const phpPoolName = username;
     const mysqlUsername = `${username}_db`;
+
+    if (!context.dryRun) {
+      const backupBin = process.env.NPANEL_BACKUP_CMD;
+      if (!backupBin) {
+        throw new BadRequestException('Hard delete requires NPANEL_BACKUP_CMD');
+      }
+      const command = await this.tools.resolve(backupBin);
+      const argsValue = process.env.NPANEL_BACKUP_ARGS;
+      const baseArgs =
+        typeof argsValue === 'string'
+          ? argsValue
+              .split(' ')
+              .map((p) => p.trim())
+              .filter((p) => p.length > 0)
+          : [];
+      const snapshotArgs = [
+        ...baseArgs,
+        'snapshot',
+        service.id,
+        service.primaryDomain,
+        homeDirectory,
+      ];
+      const snap = await this.runTool(command, snapshotArgs);
+      if (snap.code !== 0) {
+        await context.log({
+          adapter: 'backup_shell',
+          operation: 'create',
+          targetKind: 'backup_snapshot',
+          targetKey: service.id,
+          success: false,
+          dryRun: false,
+          details: {
+            command,
+            args: snapshotArgs,
+            stdout: snap.stdout,
+            stderr: snap.stderr,
+            actorId: opts?.meta?.actorId ?? null,
+            actorRole: opts?.meta?.actorRole ?? null,
+            actorType: opts?.meta?.actorType ?? null,
+            reason: opts?.meta?.reason ?? null,
+          },
+          errorMessage: 'backup_snapshot_failed',
+        });
+        throw new BadRequestException('Hard delete blocked: backup snapshot failed');
+      }
+      await context.log({
+        adapter: 'backup_shell',
+        operation: 'create',
+        targetKind: 'backup_snapshot',
+        targetKey: service.id,
+        success: true,
+        dryRun: false,
+        details: {
+          command,
+          args: snapshotArgs,
+          actorId: opts?.meta?.actorId ?? null,
+          actorRole: opts?.meta?.actorRole ?? null,
+          actorType: opts?.meta?.actorType ?? null,
+          reason: opts?.meta?.reason ?? null,
+        },
+        errorMessage: null,
+      });
+    }
     const mailboxesToDelete = new Set<string>([
       `postmaster@${service.primaryDomain}`,
     ]);
@@ -653,7 +869,14 @@ export class HostingService implements OnModuleInit {
       targetKey: service.primaryDomain,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'terminate', homeDirectory },
+      details: {
+        action: 'hard_delete',
+        homeDirectory,
+        actorId: opts?.meta?.actorId ?? null,
+        actorRole: opts?.meta?.actorRole ?? null,
+        actorType: opts?.meta?.actorType ?? null,
+        reason: opts?.meta?.reason ?? null,
+      },
       errorMessage: null,
     });
     service.status = 'terminated';
@@ -661,18 +884,16 @@ export class HostingService implements OnModuleInit {
     service.terminationTokenExpiresAt = null;
     const saved = await this.services.save(service);
     if (purge) {
-      await this.logs.delete({ serviceId: service.id } as any);
       await this.services.delete({ id: service.id } as any);
     }
     return saved;
   }
 
-  async terminateCancel(id: string): Promise<HostingServiceEntity> {
+  async terminateCancel(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
     const service = await this.get(id);
-    if (service.status !== 'termination_pending') {
+    if (service.status !== 'soft_deleted') {
       return service;
     }
-    service.status = 'active';
     service.terminationToken = null;
     service.terminationTokenExpiresAt = null;
     const saved = await this.services.save(service);
@@ -684,7 +905,13 @@ export class HostingService implements OnModuleInit {
       targetKey: saved.primaryDomain,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'termination_cancel' },
+      details: {
+        action: 'hard_delete_cancel',
+        actorId: meta?.actorId ?? null,
+        actorRole: meta?.actorRole ?? null,
+        actorType: meta?.actorType ?? null,
+        reason: meta?.reason ?? null,
+      },
       errorMessage: null,
     });
     return saved;

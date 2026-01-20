@@ -52,6 +52,8 @@ function adapter() {
     ensureAbsent: async () => {},
     listMailboxes: async () => [],
     listDatabases: async () => [],
+    updatePassword: async () => {},
+    resetPassword: async () => {},
   };
 }
 
@@ -74,6 +76,7 @@ describe('HostingService termination two-phase', () => {
   let logsRepo: any;
 
   beforeEach(() => {
+    process.env.NPANEL_HOSTING_DRY_RUN = '1';
     const s = repo<HostingServiceEntity>();
     const p = repo<HostingPlan>();
     const l = repo<HostingLog>();
@@ -95,12 +98,22 @@ describe('HostingService termination two-phase', () => {
       {} as any,
       tools() as any,
     );
-    (servicesRepo.items as any[]).push({ id: 'svc1', customerId: 'c1', primaryDomain: 'example.com', planName: 'basic', status: 'active', terminationToken: null, terminationTokenExpiresAt: null });
+    (servicesRepo.items as any[]).push({
+      id: 'svc1',
+      customerId: 'c1',
+      primaryDomain: 'example.com',
+      planName: 'basic',
+      status: 'soft_deleted',
+      softDeletedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      hardDeleteEligibleAt: new Date(Date.now() - 60 * 60 * 1000),
+      terminationToken: null,
+      terminationTokenExpiresAt: null,
+    });
   });
 
   it('prepare sets pending and token', async () => {
     const res = await service.terminatePrepare('svc1');
-    expect(res.service.status).toBe('termination_pending');
+    expect(res.service.status).toBe('soft_deleted');
     expect(res.token).toBeTruthy();
   });
 
@@ -112,7 +125,7 @@ describe('HostingService termination two-phase', () => {
   it('cancel restores active', async () => {
     await service.terminatePrepare('svc1');
     const saved = await service.terminateCancel('svc1');
-    expect(saved.status).toBe('active');
+    expect(saved.status).toBe('soft_deleted');
     expect(saved.terminationToken).toBeNull();
   });
 

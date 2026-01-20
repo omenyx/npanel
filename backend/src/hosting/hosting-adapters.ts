@@ -6,13 +6,15 @@ export type AdapterOperationKind =
   | 'delete';
 
 export type AdapterTargetKind =
+  | 'hosting_service'
   | 'system_user'
   | 'web_vhost'
   | 'php_fpm_pool'
   | 'mysql_account'
   | 'dns_zone'
   | 'mailbox'
-  | 'ftp_account';
+  | 'ftp_account'
+  | 'backup_snapshot';
 
 export interface AdapterLogEntry {
   adapter: string;

@@ -25,9 +25,15 @@ export class HostingServiceEntity {
     | 'provisioning'
     | 'active'
     | 'suspended'
-    | 'termination_pending'
+    | 'soft_deleted'
     | 'terminated'
     | 'error';
+
+  @Column({ type: 'datetime', nullable: true })
+  softDeletedAt: Date | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  hardDeleteEligibleAt: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
   terminationToken: string | null;

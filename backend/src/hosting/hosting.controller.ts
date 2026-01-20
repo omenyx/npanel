@@ -6,8 +6,10 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { HostingService } from './hosting.service';
 import { CreateHostingServiceDto } from './dto/create-hosting-service.dto';
 import { JwtAuthGuard } from '../iam/jwt-auth.guard';
@@ -29,8 +31,9 @@ export class HostingController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() body: CreateHostingServiceDto) {
-    const result = await this.hosting.create(body);
+  async create(@Body() body: CreateHostingServiceDto, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const result = await this.hosting.create(body, meta);
     return result;
   }
 
@@ -56,25 +59,44 @@ export class HostingController {
 
   @Post(':id/provision')
   @HttpCode(HttpStatus.OK)
-  async provision(@Param('id') id: string, @Body() body?: any) {
+  async provision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
     const returnCredentials = body?.returnCredentials === true;
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
     if (returnCredentials) {
-      return this.hosting.provisionWithCredentials(id);
+      return this.hosting.provisionWithCredentials(id, meta);
     }
-    return this.hosting.provision(id);
+    return this.hosting.provision(id, meta);
   }
 
   @Post(':id/suspend')
   @HttpCode(HttpStatus.OK)
-  async suspend(@Param('id') id: string) {
-    const service = await this.hosting.suspend(id);
+  async suspend(@Param('id') id: string, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const service = await this.hosting.suspend(id, meta);
     return service;
   }
 
   @Post(':id/unsuspend')
   @HttpCode(HttpStatus.OK)
-  async unsuspend(@Param('id') id: string) {
-    const service = await this.hosting.unsuspend(id);
+  async unsuspend(@Param('id') id: string, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const service = await this.hosting.unsuspend(id, meta);
+    return service;
+  }
+
+  @Post(':id/soft-delete')
+  @HttpCode(HttpStatus.OK)
+  async softDelete(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const service = await this.hosting.softDelete(id, meta);
+    return service;
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  async restore(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const service = await this.hosting.restore(id, meta);
     return service;
   }
 
@@ -86,34 +108,38 @@ export class HostingController {
 
   @Post(':id/terminate/prepare')
   @HttpCode(HttpStatus.OK)
-  async terminatePrepare(@Param('id') id: string) {
-    const result = await this.hosting.terminatePrepare(id);
+  async terminatePrepare(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const result = await this.hosting.terminatePrepare(id, meta);
     return result;
   }
 
   @Post(':id/terminate/confirm')
   @HttpCode(HttpStatus.OK)
-  async terminateConfirm(@Param('id') id: string, @Body() body: any) {
+  async terminateConfirm(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
     const token = typeof body?.token === 'string' ? body.token : '';
     const purge = body?.purge === true;
-    const service = await this.hosting.terminateConfirm(id, token, { purge });
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const service = await this.hosting.terminateConfirm(id, token, { purge, meta });
     return service;
   }
 
   @Post(':id/terminate/cancel')
   @HttpCode(HttpStatus.OK)
-  async terminateCancel(@Param('id') id: string) {
-    const service = await this.hosting.terminateCancel(id);
+  async terminateCancel(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const service = await this.hosting.terminateCancel(id, meta);
     return service;
   }
 
   @Post(':id/credentials/init')
   @HttpCode(HttpStatus.OK)
-  async initCredentials(@Param('id') id: string, @Body() body: any) {
+  async initCredentials(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
     const result = await this.hosting.initCredentials(id, {
       mailboxPassword: typeof body?.mailboxPassword === 'string' ? body.mailboxPassword : undefined,
       ftpPassword: typeof body?.ftpPassword === 'string' ? body.ftpPassword : undefined,
-    });
+    }, meta);
     return result;
   }
 }

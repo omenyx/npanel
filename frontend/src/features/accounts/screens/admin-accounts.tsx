@@ -46,7 +46,7 @@ export function AdminAccountsScreen() {
   const [plans, setPlans] = useState<HostingPlan[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [toolWarning, setToolWarning] = useState<string | null>(null);
-  const pendingTerminations = services.filter((s) => s.status === "termination_pending");
+  const pendingTerminations = services.filter((s) => s.status === "soft_deleted");
 
   const [showWizard, setShowWizard] = useState(false);
   const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
@@ -304,7 +304,7 @@ export function AdminAccountsScreen() {
       setShowTerminateModal(true);
       await refreshSingleService(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Prepare termination failed");
+      setError(err instanceof Error ? err.message : "Prepare hard delete failed");
     }
   };
 
@@ -328,25 +328,7 @@ export function AdminAccountsScreen() {
       setTerminateExpiresAt(null);
       setServices((prev) => prev.filter((s) => s.id !== terminateServiceId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Confirm termination failed");
-    }
-  };
-
-  const cancelTerminate = async (id: string) => {
-    setError(null);
-    try {
-      await requestJson(`/v1/hosting/services/${id}/terminate/cancel`, {
-        method: "POST",
-      });
-      await refreshSingleService(id);
-      if (terminateServiceId === id) {
-        setShowTerminateModal(false);
-        setTerminateServiceId(null);
-        setTerminateToken(null);
-        setTerminateExpiresAt(null);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Cancel termination failed");
+      setError(err instanceof Error ? err.message : "Confirm hard delete failed");
     }
   };
 
@@ -572,14 +554,14 @@ export function AdminAccountsScreen() {
       )}
 
       {pendingTerminations.length > 0 && (
-        <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-3 rounded-[var(--radius-card)]">
+        <div className="bg-warning/10 border border-warning/20 text-warning px-4 py-3 rounded-[var(--radius-card)]">
           {pendingTerminations.length === 1 ? (
             <span>
-              Termination pending for {pendingTerminations[0].primaryDomain}. You may cancel before confirmation.
+              Soft deleted: {pendingTerminations[0].primaryDomain}. Data preserved until retention expires.
             </span>
           ) : (
             <span>
-              Termination pending for {pendingTerminations.length} accounts. You may cancel before confirmation.
+              Soft deleted: {pendingTerminations.length} accounts. Data preserved until retention expires.
             </span>
           )}
         </div>
@@ -625,8 +607,10 @@ export function AdminAccountsScreen() {
                                   ? "bg-warning/10 text-warning"
                                   : s.status === "provisioning"
                                     ? "bg-primary/10 text-primary"
-                                    : s.status === "termination_pending"
-                                      ? "bg-danger/10 text-danger"
+                                    : s.status === "soft_deleted"
+                                      ? "bg-warning/10 text-warning"
+                                      : s.status === "terminated"
+                                        ? "bg-danger/10 text-danger"
                                       : "bg-surface-hover text-text-muted"
                           }`}
                         >
@@ -638,7 +622,7 @@ export function AdminAccountsScreen() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {(s.status === "pending" || s.status === "error") && (
+                          {(s.status === "provisioning" || s.status === "error") && (
                             <button
                               onClick={withServiceAction(s.id, "Provisioning", "provision")}
                               disabled={isBusy}
@@ -668,15 +652,35 @@ export function AdminAccountsScreen() {
                               <Play className="h-4 w-4" />
                             </button>
                           )}
-                          {s.status !== "termination_pending" && (
+                          {s.status === "active" && (
                             <button
-                              onClick={() => openTerminateFlow(s.id)}
+                              onClick={withServiceAction(s.id, "Soft deleting", "soft-delete")}
                               disabled={isBusy}
                               className="p-1.5 text-danger hover:bg-danger/10 rounded disabled:opacity-50"
-                              title="Terminate"
+                              title="Soft Delete"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
+                          )}
+                          {s.status === "soft_deleted" && (
+                            <>
+                              <button
+                                onClick={withServiceAction(s.id, "Restoring", "restore")}
+                                disabled={isBusy}
+                                className="p-1.5 text-success hover:bg-success/10 rounded disabled:opacity-50"
+                                title="Restore"
+                              >
+                                <Play className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => openTerminateFlow(s.id)}
+                                disabled={isBusy}
+                                className="p-1.5 text-danger hover:bg-danger/10 rounded disabled:opacity-50"
+                                title="Hard Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                           <button
                             onClick={() => openDetails(s.id)}
@@ -686,16 +690,6 @@ export function AdminAccountsScreen() {
                           >
                             Details
                           </button>
-                          {s.status === "termination_pending" && (
-                            <button
-                              onClick={() => cancelTerminate(s.id)}
-                              disabled={isBusy}
-                              className="p-1.5 text-warning hover:bg-warning/10 rounded disabled:opacity-50"
-                              title="Cancel Termination"
-                            >
-                              Cancel
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -711,7 +705,7 @@ export function AdminAccountsScreen() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b border-border flex justify-between items-center">
-              <h3 className="font-semibold text-text-main">Confirm Termination</h3>
+              <h3 className="font-semibold text-text-main">Confirm Hard Delete</h3>
               <button
                 onClick={() => setShowTerminateModal(false)}
                 className="text-text-muted hover:text-text-main"
@@ -721,7 +715,7 @@ export function AdminAccountsScreen() {
             </div>
             <div className="p-6 space-y-4">
               <div className="text-sm text-danger bg-danger/10 border border-danger/20 rounded p-3">
-                This will permanently delete the hosting account and data.
+                This will permanently delete the hosting account and data after a final backup snapshot.
               </div>
               <div className="text-sm text-text-muted">
                 Token: <span className="font-mono text-text-main">{terminateToken}</span>
@@ -751,7 +745,7 @@ export function AdminAccountsScreen() {
                   disabled={terminateRemaining <= 0}
                   className="bg-danger hover:bg-danger-hover text-white px-4 py-2 rounded-[var(--radius-card)] text-sm font-medium disabled:opacity-50"
                 >
-                  Confirm Termination
+                  Confirm Hard Delete
                 </button>
               </div>
             </div>
