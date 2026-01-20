@@ -65,6 +65,7 @@ async function pathExists(path: string): Promise<boolean> {
 function buildNginxConfig(spec: WebVhostSpec): string {
   const root = spec.documentRoot;
   const domain = spec.domain;
+  const socket = `/run/php-fpm-${spec.phpFpmPool}.sock`;
   return [
     'server {',
     `    listen 80;`,
@@ -83,7 +84,7 @@ function buildNginxConfig(spec: WebVhostSpec): string {
     '        fastcgi_param PATH_INFO $fastcgi_path_info;',
     '        fastcgi_index index.php;',
     '        fastcgi_split_path_info ^(.+\\.php)(/.+)$;',
-    '        fastcgi_pass unix:/run/php-fpm.sock;',
+    `        fastcgi_pass unix:${socket};`,
     '    }',
     '',
     '    client_max_body_size 64m;',

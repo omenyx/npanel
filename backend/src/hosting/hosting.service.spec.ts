@@ -55,6 +55,18 @@ function adapter() {
   };
 }
 
+function tools() {
+  return {
+    statusFor: async (name: string) => ({
+      name,
+      available: true,
+      path: `/bin/${name}`,
+      method: 'fallback',
+    }),
+    resolve: async (name: string) => name,
+  };
+}
+
 describe('HostingService termination two-phase', () => {
   let service: HostingService;
   let servicesRepo: any;
@@ -81,7 +93,7 @@ describe('HostingService termination two-phase', () => {
       l.r as any,
       { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
       {} as any,
-      {} as any,
+      tools() as any,
     );
     (servicesRepo.items as any[]).push({ id: 'svc1', customerId: 'c1', primaryDomain: 'example.com', planName: 'basic', status: 'active', terminationToken: null, terminationTokenExpiresAt: null });
   });
@@ -129,7 +141,7 @@ describe('HostingService termination two-phase', () => {
       logsRepo.r as any,
       { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
       {} as any,
-      {} as any,
+      tools() as any,
     );
     const prepared = await service.terminatePrepare('svc1');
     const confirmed = await service.terminateConfirm('svc1', prepared.token, { purge: true });
@@ -145,6 +157,8 @@ describe('HostingService provisioning', () => {
   let logsRepo: any;
 
   beforeEach(() => {
+    process.env.NPANEL_MAIL_CMD = 'mail_cmd';
+    process.env.NPANEL_FTP_CMD = 'ftp_cmd';
     const s = repo<HostingServiceEntity>();
     const p = repo<HostingPlan>();
     const l = repo<HostingLog>();
@@ -173,7 +187,7 @@ describe('HostingService provisioning', () => {
       l.r as any,
       { generateDatabasePassword: () => 'mysqlPass', generateMailboxPassword: () => 'mailPass', generateFtpPassword: () => 'ftpPass' } as any,
       {} as any,
-      {} as any,
+      tools() as any,
     );
     (servicesRepo.items as any[]).push({
       id: 'svc1',
@@ -231,7 +245,7 @@ describe('HostingService create', () => {
       l.r as any,
       { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
       {} as any,
-      {} as any,
+      tools() as any,
     );
     (servicesRepo.items as any[]).push({
       id: 'old',

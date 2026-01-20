@@ -35,8 +35,9 @@ import { AccountsService } from '../accounts/accounts.service';
 import { ToolResolver } from '../system/tool-resolver';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'fs';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
+import { buildSafeExecEnv } from '../system/exec-env';
 
 const execAsync = promisify(exec);
 
@@ -198,6 +199,88 @@ export class HostingService implements OnModuleInit {
   }
 
   async provision(id: string): Promise<HostingServiceEntity> {
+    const result = await this.provisionInternal(id, { returnCredentials: false });
+    return result.service;
+  }
+
+  async provisionWithCredentials(id: string): Promise<{
+    service: HostingServiceEntity;
+    credentials: {
+      username: string;
+      mysqlUsername: string;
+      mysqlPassword: string;
+      mailboxPassword: string;
+      ftpPassword: string;
+    };
+  }> {
+    const result = await this.provisionInternal(id, { returnCredentials: true });
+    if (!result.credentials) {
+      throw new Error('credentials_unavailable');
+    }
+    return {
+      service: result.service,
+      credentials: result.credentials,
+    };
+  }
+
+  private async runTool(
+    command: string,
+    args: string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: buildSafeExecEnv(),
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      child.on('close', (code) => {
+        resolve({ code: code ?? -1, stdout, stderr });
+      });
+    });
+  }
+
+  private async ensureDocumentRoot(
+    username: string,
+    homeDirectory: string,
+  ): Promise<string> {
+    const documentRoot = `${homeDirectory}/public_html`;
+    if (process.platform === 'win32') {
+      return documentRoot;
+    }
+    await fs.mkdir(documentRoot, { recursive: true });
+    const idPath = await this.tools.resolve('id');
+    const uidRes = await this.runTool(idPath, ['-u', username]);
+    const gidRes = await this.runTool(idPath, ['-g', username]);
+    const uid = Number.parseInt(uidRes.stdout.trim(), 10);
+    const gid = Number.parseInt(gidRes.stdout.trim(), 10);
+    if (!Number.isFinite(uid) || !Number.isFinite(gid)) {
+      throw new Error('invalid_uid_gid');
+    }
+    await fs.chown(documentRoot, uid, gid);
+    await fs.chmod(documentRoot, 0o750);
+    return documentRoot;
+  }
+
+  private async provisionInternal(
+    id: string,
+    opts: { returnCredentials: boolean },
+  ): Promise<{
+    service: HostingServiceEntity;
+    credentials?: {
+      username: string;
+      mysqlUsername: string;
+      mysqlPassword: string;
+      mailboxPassword: string;
+      ftpPassword: string;
+    };
+  }> {
     const service = await this.get(id);
     if (
       service.status !== 'provisioning' &&
@@ -209,7 +292,14 @@ export class HostingService implements OnModuleInit {
       );
     }
     if (service.status === 'active') {
-      return service;
+      return { service };
+    }
+
+    const readiness = await this.checkToolReadinessForProvision();
+    if (readiness.missing.length > 0) {
+      throw new BadRequestException(
+        `Provision blocked; missing tools: ${readiness.missing.join(', ')}`,
+      );
     }
 
     const planName = service.planName ?? 'basic';
@@ -219,8 +309,6 @@ export class HostingService implements OnModuleInit {
         `Hosting plan '${planName}' not found for service ${service.id}`,
       );
     }
-
-    // Minimal validation of plan constraints for initial provisioning
     if (plan.maxMailboxes === 0) {
       throw new BadRequestException(
         `Plan '${plan.name}' does not allow mailboxes (limit: ${plan.maxMailboxes})`,
@@ -246,22 +334,22 @@ export class HostingService implements OnModuleInit {
     const context = this.buildAdapterContext(service);
     const username = this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
-    const documentRoot = `${homeDirectory}/public_html`;
     const phpPoolName = username;
     const mysqlUsername = `${username}_db`;
     const mysqlPassword = this.credentials.generateDatabasePassword();
     const mailboxPassword = this.credentials.generateMailboxPassword();
     const ftpPassword = this.credentials.generateFtpPassword();
     const traceId = context.traceId ?? null;
+
     const rollbackFns: Array<() => Promise<void>> = [];
     const registerRollback = (fn?: () => Promise<void>) => {
-      if (fn) {
-        rollbackFns.push(fn);
-      }
+      if (fn) rollbackFns.push(fn);
     };
+
     try {
       service.status = 'provisioning';
       await this.services.save(service);
+
       const userResult = await this.userAdapter.ensurePresent(context, {
         username,
         homeDirectory,
@@ -270,6 +358,9 @@ export class HostingService implements OnModuleInit {
         quotaMb: plan.diskQuotaMb,
       });
       registerRollback(userResult.rollback);
+
+      const documentRoot = await this.ensureDocumentRoot(username, homeDirectory);
+
       const phpResult = await this.phpFpmAdapter.ensurePoolPresent(context, {
         name: phpPoolName,
         user: username,
@@ -278,43 +369,43 @@ export class HostingService implements OnModuleInit {
         phpVersion: plan.phpVersion,
       });
       registerRollback(phpResult.rollback);
-      const webResult = await this.webServerAdapter.ensureVhostPresent(
-        context,
-        {
-          domain: service.primaryDomain,
-          documentRoot,
-          phpFpmPool: phpPoolName,
-          sslCertificateId: null,
-        },
-      );
+
+      const webResult = await this.webServerAdapter.ensureVhostPresent(context, {
+        domain: service.primaryDomain,
+        documentRoot,
+        phpFpmPool: phpPoolName,
+        sslCertificateId: null,
+      });
       registerRollback(webResult.rollback);
-      const mysqlResult = await this.mysqlAdapter.ensureAccountPresent(
-        context,
-        {
-          username: mysqlUsername,
-          password: mysqlPassword,
-          databases: [],
-        },
-      );
+
+      const mysqlResult = await this.mysqlAdapter.ensureAccountPresent(context, {
+        username: mysqlUsername,
+        password: mysqlPassword,
+        databases: [],
+      });
       registerRollback(mysqlResult.rollback);
+
       const dnsRecords = this.buildDefaultDnsRecords(service.primaryDomain);
       const dnsResult = await this.dnsAdapter.ensureZonePresent(context, {
         zoneName: service.primaryDomain,
         records: dnsRecords,
       });
       registerRollback(dnsResult.rollback);
+
       const mailResult = await this.mailAdapter.ensureMailboxPresent(context, {
         address: `postmaster@${service.primaryDomain}`,
         password: mailboxPassword,
         quotaMb: plan.mailboxQuotaMb,
       });
       registerRollback(mailResult.rollback);
+
       const ftpResult = await this.ftpAdapter.ensureAccountPresent(context, {
         username,
         password: ftpPassword,
         homeDirectory,
       });
       registerRollback(ftpResult.rollback);
+
       service.status = 'active';
       const saved = await this.services.save(service);
       await context.log({
@@ -330,7 +421,20 @@ export class HostingService implements OnModuleInit {
         },
         errorMessage: null,
       });
-      return saved;
+
+      if (!opts.returnCredentials) {
+        return { service: saved };
+      }
+      return {
+        service: saved,
+        credentials: {
+          username,
+          mysqlUsername,
+          mysqlPassword,
+          mailboxPassword,
+          ftpPassword,
+        },
+      };
     } catch (error) {
       const contextAfter = this.buildAdapterContext(service);
       for (let index = rollbackFns.length - 1; index >= 0; index -= 1) {
@@ -371,88 +475,6 @@ export class HostingService implements OnModuleInit {
       });
       throw error;
     }
-  }
-
-  async provisionWithCredentials(id: string): Promise<{
-    service: HostingServiceEntity;
-    credentials: {
-      username: string;
-      mysqlUsername: string;
-      mysqlPassword: string;
-      mailboxPassword: string;
-      ftpPassword: string;
-    };
-  }> {
-    const service = await this.get(id);
-    const planName = service.planName ?? 'basic';
-    const plan = await this.plans.findOne({ where: { name: planName } });
-    if (!plan) {
-      throw new BadRequestException(
-        `Hosting plan '${planName}' not found for service ${service.id}`,
-      );
-    }
-    // Delegate to provision logic but capture credentials
-    const context = this.buildAdapterContext(service);
-    const username = this.deriveSystemUsername(service);
-    const homeDirectory = `/home/${username}`;
-    const documentRoot = `${homeDirectory}/public_html`;
-    const phpPoolName = username;
-    const mysqlUsername = `${username}_db`;
-    const mysqlPassword = this.credentials.generateDatabasePassword();
-    const mailboxPassword = this.credentials.generateMailboxPassword();
-    const ftpPassword = this.credentials.generateFtpPassword();
-    await this.userAdapter.ensurePresent(context, {
-      username,
-      homeDirectory,
-      primaryGroup: username,
-      shell: '/bin/bash',
-      quotaMb: plan.diskQuotaMb,
-    });
-    await this.phpFpmAdapter.ensurePoolPresent(context, {
-      name: phpPoolName,
-      user: username,
-      group: username,
-      listen: `/run/php-fpm-${username}.sock`,
-      phpVersion: plan.phpVersion,
-    });
-    await this.webServerAdapter.ensureVhostPresent(context, {
-      domain: service.primaryDomain,
-      documentRoot,
-      phpFpmPool: phpPoolName,
-      sslCertificateId: null,
-    });
-    await this.mysqlAdapter.ensureAccountPresent(context, {
-      username: mysqlUsername,
-      password: mysqlPassword,
-      databases: [],
-    });
-    const dnsRecords = this.buildDefaultDnsRecords(service.primaryDomain);
-    await this.dnsAdapter.ensureZonePresent(context, {
-      zoneName: service.primaryDomain,
-      records: dnsRecords,
-    });
-    await this.mailAdapter.ensureMailboxPresent(context, {
-      address: `postmaster@${service.primaryDomain}`,
-      password: mailboxPassword,
-      quotaMb: plan.mailboxQuotaMb,
-    });
-    await this.ftpAdapter.ensureAccountPresent(context, {
-      username,
-      password: ftpPassword,
-      homeDirectory,
-    });
-    service.status = 'active';
-    const saved = await this.services.save(service);
-    return {
-      service: saved,
-      credentials: {
-        username,
-        mysqlUsername,
-        mysqlPassword,
-        mailboxPassword,
-        ftpPassword,
-      },
-    };
   }
 
   async initCredentials(
@@ -824,7 +846,7 @@ export class HostingService implements OnModuleInit {
       enabled: boolean;
     };
   }> {
-    const required: string[] = ['useradd', 'nginx', 'php-fpm', 'mysql'];
+    const required: string[] = ['id', 'useradd', 'nginx', 'php-fpm', 'mysql'];
     const missing: string[] = [];
     for (const name of required) {
       const status = await this.tools.statusFor(name);
