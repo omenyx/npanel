@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Key, LogOut } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+  type GovernedResult,
+} from "@/shared/ui/governed-action-dialog";
 
 export default function CustomerSecurityPage() {
   const router = useRouter();
@@ -12,6 +17,13 @@ export default function CustomerSecurityPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<GovernedResult<any>>) | null
+  >(null);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +33,7 @@ export default function CustomerSecurityPage() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson("/v1/auth/change-password", {
+      const confirmation = await requestJson<GovernedConfirmation>("/v1/auth/change-password/prepare", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -31,10 +43,22 @@ export default function CustomerSecurityPage() {
           newPassword,
         }),
       });
-
-      setCurrentPassword("");
-      setNewPassword("");
-      setSuccess("Password updated.");
+      setActionDialogTitle("Confirm Password Change");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<GovernedResult<any>>("/v1/auth/change-password/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
+        });
+        if (res.status === "SUCCESS") {
+          setCurrentPassword("");
+          setNewPassword("");
+          setSuccess("Password updated.");
+        }
+        return res;
+      });
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -49,12 +73,27 @@ export default function CustomerSecurityPage() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson("/v1/auth/logout-all", {
+      const confirmation = await requestJson<GovernedConfirmation>("/v1/auth/logout-all/prepare", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
-      window.localStorage.removeItem("npanel_access_token");
-      window.localStorage.removeItem("npanel_refresh_token");
-      router.push("/login");
+      setActionDialogTitle("Confirm Logout All Sessions");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<GovernedResult<any>>("/v1/auth/logout-all/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
+        });
+        if (res.status === "SUCCESS") {
+          window.localStorage.removeItem("npanel_access_token");
+          window.localStorage.removeItem("npanel_refresh_token");
+          router.push("/login");
+        }
+        return res;
+      });
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -64,6 +103,20 @@ export default function CustomerSecurityPage() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, token) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, token);
+        }}
+      />
       <h1 className="text-2xl font-bold text-white">Account Security</h1>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-6">

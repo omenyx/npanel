@@ -12,6 +12,11 @@ import {
   Terminal,
 } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+  type GovernedResult,
+} from "@/shared/ui/governed-action-dialog";
 
 type MigrationJob = {
   id: string;
@@ -61,6 +66,13 @@ export function AdminTransfersScreen() {
   const [logs, setLogs] = useState<MigrationLog[]>([]);
   const [polling, setPolling] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<GovernedResult<any>>) | null
+  >(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -139,10 +151,27 @@ export function AdminTransfersScreen() {
     const token = getAccessToken();
     if (!token) return;
     try {
-      await requestJson(`/v1/migrations/${selectedJob.id}/start`, {
-        method: "POST",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/migrations/${selectedJob.id}/start/prepare`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      );
+      setActionDialogTitle("Confirm Start Migration");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<GovernedResult<any>>(
+          `/v1/migrations/${selectedJob.id}/start/confirm`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res.status === "SUCCESS") {
+          fetchJobDetails(selectedJob.id);
+        }
+        return res;
       });
-      fetchJobDetails(selectedJob.id);
+      setActionDialogOpen(true);
     } catch (e) {
       setError("Failed to start migration");
     } finally {
@@ -159,7 +188,7 @@ export function AdminTransfersScreen() {
     if (!token) return;
 
     try {
-      const job = await requestJson<MigrationJob>("/v1/migrations", {
+      const createConfirmation = await requestJson<GovernedConfirmation>("/v1/migrations/prepare-create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,37 +209,61 @@ export function AdminTransfersScreen() {
           dryRun: formData.dryRun,
         }),
       });
-
-      try {
-        await requestJson(`/v1/migrations/${job.id}/accounts`, {
+      setActionDialogTitle("Confirm Transfer Job Create");
+      setActionConfirmation(createConfirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const created = await requestJson<GovernedResult<any>>("/v1/migrations/confirm-create", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sourceUsername: formData.sourceUsername,
-            sourcePrimaryDomain: formData.sourceDomain,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
         });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        throw new Error(`Job created, but adding account failed: ${message}`);
-      }
+        if (created.status !== "SUCCESS") return created;
+        const jobId = created.result?.id as string | undefined;
+        if (!jobId) return created;
 
-      setShowWizard(false);
-      setFormData({
-        name: "",
-        sourceHost: "",
-        sourcePort: 22,
-        sourceUser: "root",
-        authMethod: "system",
-        sourcePassword: "",
-        sourceKey: "",
-        sourceUsername: "",
-        sourceDomain: "",
-        dryRun: true,
+        const addAccountConfirmation = await requestJson<GovernedConfirmation>(
+          `/v1/migrations/${jobId}/accounts/prepare-add`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceUsername: formData.sourceUsername,
+              sourcePrimaryDomain: formData.sourceDomain,
+            }),
+          },
+        );
+        setActionDialogTitle("Confirm Transfer Account Add");
+        setActionConfirmation(addAccountConfirmation);
+        setConfirmFn(() => async (intentId2: string, confirmToken2: string) => {
+          const added = await requestJson<GovernedResult<any>>(
+            `/v1/migrations/${jobId}/accounts/confirm-add`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intentId: intentId2, token: confirmToken2 }),
+            },
+          );
+          if (added.status === "SUCCESS") {
+            setShowWizard(false);
+            setFormData({
+              name: "",
+              sourceHost: "",
+              sourcePort: 22,
+              sourceUser: "root",
+              authMethod: "system",
+              sourcePassword: "",
+              sourceKey: "",
+              sourceUsername: "",
+              sourceDomain: "",
+              dryRun: true,
+            });
+            fetchData();
+          }
+          return added;
+        });
+        return created;
       });
-      fetchData();
+      setActionDialogOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create transfer");
     } finally {
@@ -220,6 +273,20 @@ export function AdminTransfersScreen() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, token) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, token);
+        }}
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
           <ArrowRightLeft className="h-6 w-6 text-primary" />
@@ -712,4 +779,3 @@ export function AdminTransfersScreen() {
     </div>
   );
 }
-

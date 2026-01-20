@@ -6,6 +6,7 @@ import { MigrationModule } from './migration/migration.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { HostingModule } from './hosting/hosting.module';
 import { SystemModule } from './system/system.module';
+import { GovernanceModule } from './governance/governance.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SystemModule } from './system/system.module';
     AccountsModule,
     HostingModule,
     SystemModule,
+    GovernanceModule,
   ],
 })
 export class AppModule {}

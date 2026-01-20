@@ -3,8 +3,13 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { RecordEditor } from "@/features/domains/components/record-editor";
-import { getZone, updateZone } from "@/features/domains/api";
+import { getZone } from "@/features/domains/api";
 import type { DnsRecord } from "@/features/domains/types";
+import { requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+} from "@/shared/ui/governed-action-dialog";
 
 export function AdminZoneEditScreen() {
   const params = useParams();
@@ -16,6 +21,10 @@ export function AdminZoneEditScreen() {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+
+  const [actionDialogOpen, setActionDialogOpen] = React.useState(false);
+  const [actionConfirmation, setActionConfirmation] =
+    React.useState<GovernedConfirmation | null>(null);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -40,9 +49,16 @@ export function AdminZoneEditScreen() {
     setError(null);
     setSuccess(null);
     try {
-      await updateZone(zoneName, { records: next });
-      setSuccess("Saved.");
-      await refresh();
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/dns/zones/${encodeURIComponent(zoneName)}/prepare-update`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ records: next }),
+        },
+      );
+      setActionConfirmation(confirmation);
+      setActionDialogOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save zone.");
     } finally {
@@ -51,17 +67,42 @@ export function AdminZoneEditScreen() {
   };
 
   return (
-    <RecordEditor
-      zoneName={zoneName}
-      records={records}
-      loading={loading}
-      saving={saving}
-      error={error}
-      success={success}
-      onRefresh={refresh}
-      onChangeRecords={setRecords}
-      onSave={save}
-    />
+    <>
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title="Confirm DNS Zone Update"
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+        }}
+        onConfirm={async (intentId, token) => {
+          const res = await requestJson<any>(
+            `/v1/dns/zones/${encodeURIComponent(zoneName)}/confirm-update`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intentId, token }),
+            },
+          );
+          if (res?.status === "SUCCESS") {
+            setSuccess("Saved.");
+            await refresh();
+          }
+          return res;
+        }}
+      />
+      <RecordEditor
+        zoneName={zoneName}
+        records={records}
+        loading={loading}
+        saving={saving}
+        error={error}
+        success={success}
+        onRefresh={refresh}
+        onChangeRecords={setRecords}
+        onSave={save}
+      />
+    </>
   );
 }
-

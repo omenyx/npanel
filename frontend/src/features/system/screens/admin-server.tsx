@@ -11,6 +11,11 @@ import {
   Play,
 } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+  type GovernedResult,
+} from "@/shared/ui/governed-action-dialog";
 
 type ServerInfo = {
   defaultIpv4: string;
@@ -61,6 +66,11 @@ export function AdminServerScreen() {
   const [restartingService, setRestartingService] = useState<string | null>(null);
   const [customService, setCustomService] = useState("");
 
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+
   const fetchStatus = async () => {
     setLoading(true);
     setError(null);
@@ -82,8 +92,6 @@ export function AdminServerScreen() {
 
   const handleRestartService = async (serviceId: string) => {
     if (!serviceId) return;
-    if (!confirm(`Are you sure you want to restart ${serviceId}?`)) return;
-
     setRestartingService(serviceId);
     const token = getAccessToken();
     if (!token) {
@@ -91,20 +99,37 @@ export function AdminServerScreen() {
       return;
     }
     try {
-      await requestJson("/system/tools/restart-service", {
+      const confirmation = await requestJson<GovernedConfirmation>(
+        "/system/tools/restart-service/prepare",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ service: serviceId }),
+        },
+      );
+      setActionDialogTitle(`Confirm Service Restart: ${serviceId}`);
+      setActionConfirmation(confirmation);
+      setActionDialogOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to prepare restart");
+    } finally {
+      setRestartingService(null);
+    }
+  };
+
+  const confirmRestart = async (
+    intentId: string,
+    confirmToken: string,
+  ): Promise<GovernedResult<any>> => {
+    return requestJson<GovernedResult<any>>("/system/tools/restart-service/confirm", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ service: serviceId }),
+        body: JSON.stringify({ intentId, token: confirmToken }),
       });
-
-      alert(`Service ${serviceId} restarted successfully.`);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to restart service");
-    } finally {
-      setRestartingService(null);
-    }
   };
 
   useEffect(() => {
@@ -136,6 +161,16 @@ export function AdminServerScreen() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+        }}
+        onConfirm={confirmRestart}
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white flex items-center gap-2">
           <Server className="h-6 w-6 text-blue-500" />

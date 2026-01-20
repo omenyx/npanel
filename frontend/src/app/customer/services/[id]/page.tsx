@@ -16,6 +16,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+} from "@/shared/ui/governed-action-dialog";
 
 interface PlanLimits {
   diskQuotaMb: number;
@@ -58,6 +62,13 @@ export default function ServiceDetails() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resettingFtp, setResettingFtp] = useState(false);
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<any>) | null
+  >(null);
   const [resettingDb, setResettingDb] = useState(false);
   const [creatingMailbox, setCreatingMailbox] = useState(false);
   const [newMailboxLocalPart, setNewMailboxLocalPart] = useState("");
@@ -111,21 +122,34 @@ export default function ServiceDetails() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson(`/v1/customer/hosting/services/${id}/mailboxes`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/customer/hosting/services/${id}/mailboxes/prepare-create`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ localPart: newMailboxLocalPart, password: newPassword }),
         },
-        body: JSON.stringify({
-          localPart: newMailboxLocalPart,
-          password: newPassword,
-        }),
+      );
+      setActionDialogTitle("Confirm Mailbox Create");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>(
+          `/v1/customer/hosting/services/${id}/mailboxes/confirm-create`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res?.status === "SUCCESS") {
+          setCreatingMailbox(false);
+          setNewMailboxLocalPart("");
+          setNewPassword("");
+          await refreshMailboxes();
+        }
+        return res;
       });
-      setCreatingMailbox(false);
-      setNewMailboxLocalPart("");
-      setNewPassword("");
-      await refreshMailboxes();
-      alert("Mailbox created successfully");
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -140,18 +164,32 @@ export default function ServiceDetails() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson(`/v1/customer/hosting/services/${id}/mailboxes/delete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/customer/hosting/services/${id}/mailboxes/prepare-delete`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: deletingMailboxFor }),
         },
-        body: JSON.stringify({
-          address: deletingMailboxFor,
-        }),
+      );
+      setActionDialogTitle("Confirm Mailbox Delete");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>(
+          `/v1/customer/hosting/services/${id}/mailboxes/confirm-delete`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res?.status === "SUCCESS") {
+          setDeletingMailboxFor(null);
+          await refreshMailboxes();
+        }
+        return res;
       });
-      setDeletingMailboxFor(null);
-      await refreshMailboxes();
-      alert("Mailbox deleted");
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -166,19 +204,32 @@ export default function ServiceDetails() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson(`/v1/customer/hosting/services/${id}/databases/password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/customer/hosting/services/${id}/databases/prepare-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: newPassword }),
         },
-        body: JSON.stringify({
-          password: newPassword,
-        }),
+      );
+      setActionDialogTitle("Confirm Database Password Reset");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>(
+          `/v1/customer/hosting/services/${id}/databases/confirm-password`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res?.status === "SUCCESS") {
+          setResettingDb(false);
+          setNewPassword("");
+        }
+        return res;
       });
-
-      setResettingDb(false);
-      setNewPassword("");
-      alert("Database password reset successfully");
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -193,19 +244,32 @@ export default function ServiceDetails() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson(`/v1/customer/hosting/services/${id}/ftp/password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/customer/hosting/services/${id}/ftp/prepare-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: newPassword }),
         },
-        body: JSON.stringify({
-          password: newPassword,
-        }),
+      );
+      setActionDialogTitle("Confirm FTP Password Reset");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>(
+          `/v1/customer/hosting/services/${id}/ftp/confirm-password`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res?.status === "SUCCESS") {
+          setResettingFtp(false);
+          setNewPassword("");
+        }
+        return res;
       });
-
-      setResettingFtp(false);
-      setNewPassword("");
-      alert("FTP password reset successfully");
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -222,20 +286,32 @@ export default function ServiceDetails() {
     try {
         const token = getAccessToken();
         if (!token) return;
-        await requestJson(`/v1/customer/hosting/services/${id}/mailboxes/password`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        const confirmation = await requestJson<GovernedConfirmation>(
+          `/v1/customer/hosting/services/${id}/mailboxes/prepare-password`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: changingPasswordFor, password: newPassword }),
           },
-          body: JSON.stringify({
-            address: changingPasswordFor,
-            password: newPassword,
-          }),
+        );
+        setActionDialogTitle("Confirm Mailbox Password Update");
+        setActionConfirmation(confirmation);
+        setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+          const res = await requestJson<any>(
+            `/v1/customer/hosting/services/${id}/mailboxes/confirm-password`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intentId, token: confirmToken }),
+            },
+          );
+          if (res?.status === "SUCCESS") {
+            setChangingPasswordFor(null);
+            setNewPassword("");
+          }
+          return res;
         });
-        
-        setChangingPasswordFor(null);
-        setNewPassword("");
-        alert('Password updated successfully');
+        setActionDialogOpen(true);
     } catch (err: any) {
         setError(err.message);
     } finally {
@@ -248,6 +324,20 @@ export default function ServiceDetails() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, confirmToken) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, confirmToken);
+        }}
+      />
       <div className="flex items-center gap-4">
         <Link href="/customer" className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white">
             <ArrowLeft className="h-5 w-5" />

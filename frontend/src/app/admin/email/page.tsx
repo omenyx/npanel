@@ -4,6 +4,11 @@ import * as React from "react";
 import { Mail, RefreshCw } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { Button } from "@/shared/ui/button";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+  type GovernedResult,
+} from "@/shared/ui/governed-action-dialog";
 
 type HostingService = {
   id: string;
@@ -18,6 +23,9 @@ export default function AdminEmailPage() {
   const [selected, setSelected] = React.useState<HostingService | null>(null);
   const [credentials, setCredentials] = React.useState<{ mailboxPassword: string; ftpPassword: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [actionDialogOpen, setActionDialogOpen] = React.useState(false);
+  const [actionConfirmation, setActionConfirmation] =
+    React.useState<GovernedConfirmation | null>(null);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -43,21 +51,55 @@ export default function AdminEmailPage() {
     setError(null);
     setCredentials(null);
     try {
-      const payload = await requestJson<any>(`/v1/hosting/services/${selected.id}/credentials/init`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      setCredentials({ mailboxPassword: payload.mailboxPassword, ftpPassword: payload.ftpPassword });
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/hosting/services/${selected.id}/prepare-credentials-init`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      setActionConfirmation(confirmation);
+      setActionDialogOpen(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to initialize credentials.");
+      setError(err instanceof Error ? err.message : "Failed to prepare credential init.");
     } finally {
       setBusy(false);
     }
   };
 
+  const confirmInit = async (
+    intentId: string,
+    token: string,
+  ): Promise<GovernedResult<any>> => {
+    if (!selected) throw new Error("No service selected");
+    const payload = await requestJson<GovernedResult<any>>(
+      `/v1/hosting/services/${selected.id}/confirm-credentials-init`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intentId, token }),
+      },
+    );
+    const res = payload?.result;
+    if (res?.mailboxPassword && res?.ftpPassword) {
+      setCredentials({ mailboxPassword: res.mailboxPassword, ftpPassword: res.ftpPassword });
+    }
+    return payload;
+  };
+
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title="Confirm Initial Credentials"
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+        }}
+        onConfirm={confirmInit}
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
           <Mail className="h-6 w-6 text-primary" />
@@ -121,4 +163,3 @@ export default function AdminEmailPage() {
     </div>
   );
 }
-

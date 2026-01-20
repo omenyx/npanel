@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { Package, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+} from "@/shared/ui/governed-action-dialog";
 
 type HostingPlan = {
   name: string;
@@ -36,6 +40,14 @@ export function AdminPackagesScreen() {
   const [newPlanMailboxQuota, setNewPlanMailboxQuota] = useState("1024");
   const [newPlanMaxMailboxes, setNewPlanMaxMailboxes] = useState("1");
   const [newPlanMaxFtp, setNewPlanMaxFtp] = useState("1");
+
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState<string>("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<any>) | null
+  >(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -94,23 +106,38 @@ export function AdminPackagesScreen() {
         maxFtpAccounts: maxFtp,
       };
 
-      const newPlan = await requestJson<HostingPlan>("/v1/hosting/plans", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        "/v1/hosting/plans/prepare-create",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
-      setPlans((prev) =>
-        [...prev, newPlan].sort((a, b) => a.name.localeCompare(b.name)),
       );
-      setShowCreate(false);
-      setNewPlanName("");
-      setNewPlanDisk("1024");
-      setNewPlanMaxDbs("1");
-      setNewPlanMailboxQuota("1024");
-      setNewPlanMaxMailboxes("1");
-      setNewPlanMaxFtp("1");
+      setActionDialogTitle("Confirm Package Create");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>("/v1/hosting/plans/confirm-create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
+        });
+        const created = res?.result;
+        if (created?.name) {
+          setPlans((prev) =>
+            [...prev, created].sort((a, b) => a.name.localeCompare(b.name)),
+          );
+          setShowCreate(false);
+          setNewPlanName("");
+          setNewPlanDisk("1024");
+          setNewPlanMaxDbs("1");
+          setNewPlanMailboxQuota("1024");
+          setNewPlanMaxMailboxes("1");
+          setNewPlanMaxFtp("1");
+        }
+        return res;
+      });
+      setActionDialogOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create plan");
     } finally {
@@ -136,18 +163,32 @@ export function AdminPackagesScreen() {
       );
       return;
     }
-    if (!confirm(`Delete package "${planName}"? This cannot be undone.`)) {
-      return;
-    }
     setDeleting(planName);
     setError(null);
     const token = getAccessToken();
     if (!token) return;
     try {
-      await requestJson(`/v1/hosting/plans/${encodeURIComponent(planName)}`, {
-        method: "DELETE",
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/hosting/plans/${encodeURIComponent(planName)}/prepare-delete`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      );
+      setActionDialogTitle("Confirm Package Delete");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>(
+          `/v1/hosting/plans/${encodeURIComponent(planName)}/confirm-delete`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res?.status === "SUCCESS") {
+          setPlans((prev) => prev.filter((p) => p.name !== planName));
+        }
+        return res;
       });
-      setPlans((prev) => prev.filter((p) => p.name !== planName));
+      setActionDialogOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete package");
     } finally {
@@ -157,6 +198,20 @@ export function AdminPackagesScreen() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, confirmToken) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, confirmToken);
+        }}
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
           <Package className="h-6 w-6 text-primary" />
@@ -386,4 +441,3 @@ export function AdminPackagesScreen() {
     </div>
   );
 }
-

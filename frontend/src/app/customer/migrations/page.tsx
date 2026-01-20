@@ -11,6 +11,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+  type GovernedResult,
+} from "@/shared/ui/governed-action-dialog";
 
 type HostingService = {
   id: string;
@@ -54,6 +59,13 @@ export default function CustomerMigrationsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<GovernedResult<any>>) | null
+  >(null);
 
   const [targetServiceId, setTargetServiceId] = useState<string>("");
   const [sourceHost, setSourceHost] = useState("");
@@ -119,7 +131,7 @@ export default function CustomerMigrationsPage() {
       const token = getAccessToken();
       if (!token) return;
 
-      const job = await requestJson<MigrationJob>("/v1/customer/migrations", {
+      const createConfirmation = await requestJson<GovernedConfirmation>("/v1/customer/migrations/prepare-create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,24 +145,75 @@ export default function CustomerMigrationsPage() {
           dryRun: false,
         }),
       });
+      setActionDialogTitle("Confirm Transfer Job Create");
+      setActionConfirmation(createConfirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const created = await requestJson<GovernedResult<any>>("/v1/customer/migrations/confirm-create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
+        });
+        if (created.status !== "SUCCESS") return created;
+        const jobId = created.result?.id as string | undefined;
+        if (!jobId) return created;
 
-      await requestJson(`/v1/customer/migrations/${job.id}/accounts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceUsername: sourceUsername.trim(),
-          sourcePrimaryDomain: sourcePrimaryDomain.trim(),
-          targetServiceId,
-        }),
+        const addAccountConfirmation = await requestJson<GovernedConfirmation>(
+          `/v1/customer/migrations/${jobId}/accounts/prepare-add`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceUsername: sourceUsername.trim(),
+              sourcePrimaryDomain: sourcePrimaryDomain.trim(),
+              targetServiceId,
+            }),
+          },
+        );
+        setActionDialogTitle("Confirm Transfer Account Add");
+        setActionConfirmation(addAccountConfirmation);
+        setConfirmFn(() => async (intentId2: string, confirmToken2: string) => {
+          const added = await requestJson<GovernedResult<any>>(
+            `/v1/customer/migrations/${jobId}/accounts/confirm-add`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intentId: intentId2, token: confirmToken2 }),
+            },
+          );
+          if (added.status !== "SUCCESS") return added;
+
+          const planConfirmation = await requestJson<GovernedConfirmation>(
+            `/v1/customer/migrations/${jobId}/plan/prepare`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            },
+          );
+          setActionDialogTitle("Confirm Transfer Plan");
+          setActionConfirmation(planConfirmation);
+          setConfirmFn(() => async (intentId3: string, confirmToken3: string) => {
+            const planned = await requestJson<GovernedResult<any>>(
+              `/v1/customer/migrations/${jobId}/plan/confirm`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ intentId: intentId3, token: confirmToken3 }),
+              },
+            );
+            if (planned.status === "SUCCESS") {
+              const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
+              setJobs(jobsData);
+              setActiveJobId(jobId);
+              await refreshJobDetails(jobId);
+            }
+            return planned;
+          });
+          return added;
+        });
+        return created;
       });
-
-      await requestJson(`/v1/customer/migrations/${job.id}/plan`, { method: "POST" });
-
-      const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
-      setJobs(jobsData);
-
-      setActiveJobId(job.id);
-      await refreshJobDetails(job.id);
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -165,10 +228,29 @@ export default function CustomerMigrationsPage() {
     try {
       const token = getAccessToken();
       if (!token) return;
-      await requestJson(`/v1/customer/migrations/${activeJobId}/run-next`, { method: "POST" });
-      await refreshJobDetails(activeJobId);
-      const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
-      setJobs(jobsData);
+      const confirmation = await requestJson<GovernedConfirmation>(
+        `/v1/customer/migrations/${activeJobId}/run-next/prepare`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      );
+      setActionDialogTitle("Confirm Run Next Step");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<GovernedResult<any>>(
+          `/v1/customer/migrations/${activeJobId}/run-next/confirm`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          },
+        );
+        if (res.status === "SUCCESS") {
+          await refreshJobDetails(activeJobId);
+          const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
+          setJobs(jobsData);
+        }
+        return res;
+      });
+      setActionDialogOpen(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -182,6 +264,20 @@ export default function CustomerMigrationsPage() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, token) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, token);
+        }}
+      />
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800">
           <ArrowRightLeft className="h-5 w-5 text-indigo-400" />

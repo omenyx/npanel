@@ -16,33 +16,71 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtService } from '@nestjs/jwt';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { GovernanceService } from '../governance/governance.service';
+import type { ActionStep } from '../governance/governance.service';
 
 @Controller('v1')
 export class IamController {
   constructor(
     private readonly iam: IamService,
     private readonly jwt: JwtService,
+    private readonly governance: GovernanceService,
   ) {}
 
   @Post('install/init')
   @HttpCode(HttpStatus.CREATED)
   async initialize(@Body() body: InstallInitDto) {
+    throw new Error('Install init requires prepare and confirm');
+  }
+
+  @Post('install/init/prepare')
+  @HttpCode(HttpStatus.OK)
+  async initializePrepare(@Body() body: InstallInitDto) {
     const alreadyInitialized = await this.iam.hasAnyUser();
     if (alreadyInitialized) {
-      return {
-        status: 'already_initialized',
-      };
+      throw new BadRequestException('already_initialized');
     }
+    return this.governance.prepare({
+      module: 'iam',
+      action: 'install_init',
+      targetKind: 'system',
+      targetKey: 'initial_admin',
+      payload: body as any,
+      risk: 'high',
+      reversibility: 'requires_restore',
+      impactedSubsystems: ['control_plane_db', 'auth'],
+      actor: { actorRole: 'SYSTEM', actorType: 'bootstrap' },
+    });
+  }
 
-    const admin = await this.iam.createInitialAdmin(
-      body.adminEmail,
-      body.adminPassword,
-    );
-
-    return {
-      status: 'initialized',
-      adminId: admin.id,
-    };
+  @Post('install/init/confirm')
+  @HttpCode(HttpStatus.OK)
+  async initializeConfirm(@Body() body: { intentId: string; token: string }) {
+    const intent = await this.governance.verify(body.intentId, body.token);
+    const steps: ActionStep[] = [{ name: 'create_initial_admin', status: 'SUCCESS' }];
+    try {
+      const alreadyInitialized = await this.iam.hasAnyUser();
+      if (alreadyInitialized) {
+        steps[0] = { name: 'create_initial_admin', status: 'SKIPPED' };
+        return this.governance.recordResult({
+          intent,
+          status: 'PARTIAL_SUCCESS',
+          steps,
+          result: { status: 'already_initialized' },
+        });
+      }
+      const payload = intent.payload as any;
+      const admin = await this.iam.createInitialAdmin(payload.adminEmail, payload.adminPassword);
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { status: 'initialized', adminId: admin.id },
+      });
+    } catch (e) {
+      steps[0] = { name: 'create_initial_admin', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
+      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+    }
   }
 
   @Post('auth/login')
@@ -95,30 +133,93 @@ export class IamController {
     @Req() req: Request & { user?: any },
     @Body() body: ChangePasswordDto,
   ) {
+    throw new Error('Change password requires prepare and confirm');
+  }
+
+  @Post('auth/change-password/prepare')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePasswordPrepare(
+    @Req() req: Request & { user?: any },
+    @Body() body: ChangePasswordDto & { reason?: string },
+  ) {
     const userId = req.user?.id;
-    if (!userId) {
-      throw new BadRequestException('Unauthorized');
-    }
+    if (!userId) throw new BadRequestException('Unauthorized');
+    return this.governance.prepare({
+      module: 'iam',
+      action: 'change_password',
+      targetKind: 'user',
+      targetKey: userId,
+      payload: body as any,
+      risk: 'high',
+      reversibility: 'requires_restore',
+      impactedSubsystems: ['auth'],
+      actor: { actorId: userId, actorRole: req.user?.role, actorType: 'user', reason: typeof body?.reason === 'string' ? body.reason : undefined },
+    });
+  }
+
+  @Post('auth/change-password/confirm')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePasswordConfirm(
+    @Req() req: Request & { user?: any },
+    @Body() body: { intentId: string; token: string },
+  ) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException('Unauthorized');
+    const intent = await this.governance.verify(body.intentId, body.token);
+    const steps: ActionStep[] = [{ name: 'change_password', status: 'SUCCESS' }];
     try {
-      await this.iam.changePassword(userId, body.currentPassword, body.newPassword);
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'change_password_failed',
-      );
+      const payload = intent.payload as any;
+      await this.iam.changePassword(userId, payload.currentPassword, payload.newPassword);
+      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { ok: true } });
+    } catch (e) {
+      steps[0] = { name: 'change_password', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'change_password_failed' };
+      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
     }
-    return { ok: true };
   }
 
   @Post('auth/logout-all')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async logoutAll(@Req() req: Request & { user?: any }) {
+    throw new Error('Logout all requires prepare and confirm');
+  }
+
+  @Post('auth/logout-all/prepare')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logoutAllPrepare(@Req() req: Request & { user?: any }, @Body() body: { reason?: string }) {
     const userId = req.user?.id;
-    if (!userId) {
-      throw new BadRequestException('Unauthorized');
+    if (!userId) throw new BadRequestException('Unauthorized');
+    return this.governance.prepare({
+      module: 'iam',
+      action: 'logout_all',
+      targetKind: 'user',
+      targetKey: userId,
+      payload: {} as any,
+      risk: 'medium',
+      reversibility: 'reversible',
+      impactedSubsystems: ['auth'],
+      actor: { actorId: userId, actorRole: req.user?.role, actorType: 'user', reason: typeof body?.reason === 'string' ? body.reason : undefined },
+    });
+  }
+
+  @Post('auth/logout-all/confirm')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logoutAllConfirm(@Req() req: Request & { user?: any }, @Body() body: { intentId: string; token: string }) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException('Unauthorized');
+    const intent = await this.governance.verify(body.intentId, body.token);
+    const steps: ActionStep[] = [{ name: 'logout_all', status: 'SUCCESS' }];
+    try {
+      await this.iam.logoutAll(userId);
+      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { ok: true } });
+    } catch (e) {
+      steps[0] = { name: 'logout_all', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'logout_all_failed' };
+      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
     }
-    await this.iam.logoutAll(userId);
-    return { ok: true };
   }
 
   @Get('auth/me')

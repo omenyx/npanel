@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Users, Play, Pause, Trash2, Plus } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
 import { normalizeToolStatusList } from "@/shared/api/system-status";
+import {
+  GovernedActionDialog,
+  type GovernedConfirmation,
+} from "@/shared/ui/governed-action-dialog";
 
 type Customer = {
   id: string;
@@ -74,6 +78,14 @@ export function AdminAccountsScreen() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsServiceId, setDetailsServiceId] = useState<string | null>(null);
   const [settingCredentials, setSettingCredentials] = useState(false);
+
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionDialogTitle, setActionDialogTitle] = useState<string>("");
+  const [actionConfirmation, setActionConfirmation] =
+    useState<GovernedConfirmation | null>(null);
+  const [confirmFn, setConfirmFn] = useState<
+    ((intentId: string, token: string) => Promise<any>) | null
+  >(null);
 
   useEffect(() => {
     let timer: any;
@@ -189,48 +201,47 @@ export function AdminAccountsScreen() {
     if (!token) return;
 
     try {
-      const payload = await requestJson<any>("/v1/hosting/services", {
+      const dto = {
+        primaryDomain: newServiceDomain,
+        planName: newServicePlan,
+        autoProvision: true,
+        ...(customerMode === "existing"
+          ? { customerId: newServiceCustomerId }
+          : { customer: { name: newCustomerName, email: newCustomerEmail } }),
+      };
+      const confirmation = await requestJson<any>("/v1/hosting/services/prepare-create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          primaryDomain: newServiceDomain,
-          planName: newServicePlan,
-          autoProvision: false,
-          ...(customerMode === "existing"
-            ? { customerId: newServiceCustomerId }
-            : { customer: { name: newCustomerName, email: newCustomerEmail } }),
-        }),
+        body: JSON.stringify(dto),
       });
-      const newService = payload?.service ?? payload;
-      setProvisionServiceId(newService.id);
-      setServices((prev) => [newService, ...prev]);
-      startLogPolling(newService.id);
-      const provisioned = await requestJson<any>(
-        `/v1/hosting/services/${newService.id}/provision`,
-        {
+      setActionDialogTitle("Confirm Account Create + Provision");
+      setActionConfirmation(confirmation);
+      setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+        const res = await requestJson<any>("/v1/hosting/services/confirm-create", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ returnCredentials: true }),
-        },
-      );
-      stopLogPolling();
-      const updated = provisioned?.service ?? provisioned;
-      setServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-      if (provisioned?.credentials) {
-        setCreationCredentials(provisioned);
-        setDetailsServiceId(updated.id);
-        setShowDetailsModal(true);
-      }
-
-      setShowWizard(false);
-      setNewServiceDomain("");
-      setNewServiceCustomerId("");
-      setProvisionServiceId(null);
-      setWizardStep(1);
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intentId, token: confirmToken }),
+        });
+        const payload = res?.result;
+        const createdService = payload?.service ?? payload;
+        if (createdService?.id) {
+          setServices((prev) => [createdService, ...prev.filter((s) => s.id !== createdService.id)]);
+        }
+        if (payload?.credentials && createdService?.id) {
+          setCreationCredentials(payload);
+          setDetailsServiceId(createdService.id);
+          setShowDetailsModal(true);
+        }
+        setShowWizard(false);
+        setNewServiceDomain("");
+        setNewServiceCustomerId("");
+        setProvisionServiceId(null);
+        setWizardStep(1);
+        return res;
+      });
+      setActionDialogOpen(true);
     } catch (err) {
       stopLogPolling();
       setError(err instanceof Error ? err.message : "Failed to create account");
@@ -245,8 +256,25 @@ export function AdminAccountsScreen() {
       setServiceActionId(id);
       setServiceActionLabel(label);
       try {
-        await requestJson(`/v1/hosting/services/${id}/${endpoint}`, { method: "POST" });
-        await refreshSingleService(id);
+        const preparePath = `/v1/hosting/services/${id}/prepare-${endpoint}`;
+        const confirmPath = `/v1/hosting/services/${id}/confirm-${endpoint}`;
+        const confirmation = await requestJson<any>(preparePath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        setActionDialogTitle(`Confirm ${label}`);
+        setActionConfirmation(confirmation);
+        setConfirmFn(() => async (intentId: string, confirmToken: string) => {
+          const res = await requestJson<any>(confirmPath, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ intentId, token: confirmToken }),
+          });
+          await refreshSingleService(id);
+          return res;
+        });
+        setActionDialogOpen(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Action failed");
       } finally {
@@ -339,6 +367,20 @@ export function AdminAccountsScreen() {
 
   return (
     <div className="space-y-6">
+      <GovernedActionDialog
+        open={actionDialogOpen}
+        title={actionDialogTitle}
+        confirmation={actionConfirmation}
+        onClose={() => {
+          setActionDialogOpen(false);
+          setActionConfirmation(null);
+          setConfirmFn(null);
+        }}
+        onConfirm={async (intentId, confirmToken) => {
+          if (!confirmFn) throw new Error("No confirm handler");
+          return confirmFn(intentId, confirmToken);
+        }}
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-main flex items-center gap-2">
           <Users className="h-6 w-6 text-primary" />

@@ -1,10 +1,16 @@
-import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpStatus, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpStatus, Query, UseGuards, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ToolResolver } from './tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
 import * as os from 'os';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { stat } from 'fs/promises';
+import { JwtAuthGuard } from '../iam/jwt-auth.guard';
+import { RolesGuard } from '../iam/roles.guard';
+import { Roles } from '../iam/roles.decorator';
+import { GovernanceService } from '../governance/governance.service';
+import type { ActionStep } from '../governance/governance.service';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -34,10 +40,13 @@ function normalizeServiceName(value: string): string {
 }
 
 @Controller('system/tools')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 export class ToolsController {
   constructor(
     private readonly toolResolver: ToolResolver,
     private readonly hostingService: HostingService, // Inject HostingService
+    private readonly governance: GovernanceService,
   ) {}
 
   @Get('status')
@@ -120,6 +129,11 @@ export class ToolsController {
 
   @Post('restart-service')
   async restartService(@Body('service') service: string) {
+    throw new BadRequestException('Restart service requires prepare and confirm');
+  }
+
+  @Post('restart-service/prepare')
+  async restartServicePrepare(@Body('service') service: string, @Body('reason') reason: string | undefined, @Req() req: Request) {
     const allowedServices = [
       'nginx',
       'php8.2-fpm', // Adjust based on actual service name
@@ -163,25 +177,64 @@ export class ToolsController {
     }
 
     const serviceName = normalizeServiceName(requestedService);
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof reason === 'string' ? reason : undefined };
+    return this.governance.prepare({
+      module: 'system',
+      action: 'restart_service',
+      targetKind: 'system_service',
+      targetKey: serviceName,
+      payload: { service: serviceName } as any,
+      risk: 'high',
+      reversibility: 'reversible',
+      impactedSubsystems: ['systemd'],
+      actor,
+    });
+  }
 
+  @Post('restart-service/confirm')
+  async restartServiceConfirm(@Body() body: { intentId: string; token: string }) {
+    const intent = await this.governance.verify(body.intentId, body.token);
+    const serviceName = (intent.payload as any)?.service as string;
+    const steps: ActionStep[] = [
+      { name: 'systemctl_restart', status: 'SKIPPED' },
+      { name: 'service_restart_fallback', status: 'SKIPPED' },
+    ];
     try {
       await execFileAsync('systemctl', ['restart', serviceName]);
-      return { success: true, message: `Service ${serviceName} restarted.` };
+      steps[0] = { name: 'systemctl_restart', status: 'SUCCESS' };
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { success: true, message: `Service ${serviceName} restarted.` },
+      });
     } catch (error) {
+      steps[0] = {
+        name: 'systemctl_restart',
+        status: 'FAILED',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
       try {
         await execFileAsync('service', [serviceName, 'restart']);
-        return { success: true, message: `Service ${serviceName} restarted.` };
+        steps[1] = { name: 'service_restart_fallback', status: 'SUCCESS' };
+        return this.governance.recordResult({
+          intent,
+          status: 'PARTIAL_SUCCESS',
+          steps,
+          result: { success: true, message: `Service ${serviceName} restarted.` },
+        });
       } catch (secondError) {
-        const message =
-          secondError instanceof Error
-            ? secondError.message
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        throw new HttpException(
-          `Failed to restart service ${serviceName}: ${message}`,
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
+        steps[1] = {
+          name: 'service_restart_fallback',
+          status: 'FAILED',
+          errorMessage: secondError instanceof Error ? secondError.message : String(secondError),
+        };
+        return this.governance.recordResult({
+          intent,
+          status: 'FAILED',
+          steps,
+          errorMessage: steps[1].errorMessage ?? steps[0].errorMessage ?? null,
+        });
       }
     }
   }
