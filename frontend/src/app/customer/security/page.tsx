@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Key, LogOut } from "lucide-react";
+import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
 export default function CustomerSecurityPage() {
   const router = useRouter();
@@ -18,23 +19,18 @@ export default function CustomerSecurityPage() {
     setError(null);
     setSuccess(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch("http://127.0.0.1:3000/v1/auth/change-password", {
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson("/v1/auth/change-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           currentPassword,
           newPassword,
         }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to change password");
-      }
 
       setCurrentPassword("");
       setNewPassword("");
@@ -51,17 +47,11 @@ export default function CustomerSecurityPage() {
     setError(null);
     setSuccess(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch("http://127.0.0.1:3000/v1/auth/logout-all", {
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson("/v1/auth/logout-all", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || "Failed to logout all sessions");
-      }
       window.localStorage.removeItem("npanel_access_token");
       window.localStorage.removeItem("npanel_refresh_token");
       router.push("/login");
@@ -149,4 +139,3 @@ export default function CustomerSecurityPage() {
     </div>
   );
 }
-

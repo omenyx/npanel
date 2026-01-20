@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
 interface PlanLimits {
   diskQuotaMb: number;
@@ -65,30 +66,24 @@ export default function ServiceDetails() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = window.localStorage.getItem("npanel_access_token");
-        const headers = { Authorization: `Bearer ${token}` };
-        
-        const [serviceRes, mailboxesRes, ftpRes, dbRes, dnsRes] = await Promise.all([
-            fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}`, { headers }),
-            fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}/mailboxes`, { headers }),
-            fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}/ftp`, { headers }),
-            fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}/databases`, { headers }),
-            fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}/dns`, { headers }),
+        const token = getAccessToken();
+        if (!token) return;
+
+        const [serviceData, mailboxesData, ftpData, dbData, dnsData] = await Promise.all([
+          requestJson<HostingService>(`/v1/customer/hosting/services/${id}`),
+          requestJson<string[]>(`/v1/customer/hosting/services/${id}/mailboxes`),
+          requestJson<FtpCredentials>(`/v1/customer/hosting/services/${id}/ftp`),
+          requestJson<{ databases: string[] }>(`/v1/customer/hosting/services/${id}/databases`),
+          requestJson<{ records: DnsRecord[] }>(`/v1/customer/hosting/services/${id}/dns`),
         ]);
 
-        if (serviceRes.ok && mailboxesRes.ok && ftpRes.ok && dbRes.ok && dnsRes.ok) {
-          setService(await serviceRes.json());
-          setMailboxes(await mailboxesRes.json());
-          setFtp(await ftpRes.json());
-          const dbData = await dbRes.json();
-          setDatabases(dbData.databases || []);
-          const dnsData = await dnsRes.json();
-          setDnsRecords(dnsData.records || []);
-        } else {
-            router.push('/customer'); // fallback
-        }
+        setService(serviceData);
+        setMailboxes(mailboxesData);
+        setFtp(ftpData);
+        setDatabases(dbData.databases || []);
+        setDnsRecords(dnsData.records || []);
       } catch (err) {
-        console.error(err);
+        router.push("/customer");
       } finally {
         setLoading(false);
       }
@@ -98,14 +93,12 @@ export default function ServiceDetails() {
 
   const refreshMailboxes = async () => {
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const headers = { Authorization: `Bearer ${token}` };
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/hosting/services/${id}/mailboxes`,
-        { headers },
+      const token = getAccessToken();
+      if (!token) return;
+      const data = await requestJson<string[]>(
+        `/v1/customer/hosting/services/${id}/mailboxes`,
       );
-      if (!res.ok) return;
-      setMailboxes(await res.json());
+      setMailboxes(data);
     } catch {
       return;
     }
@@ -116,25 +109,18 @@ export default function ServiceDetails() {
     setSaving(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/hosting/services/${id}/mailboxes`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            localPart: newMailboxLocalPart,
-            password: newPassword,
-          }),
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson(`/v1/customer/hosting/services/${id}/mailboxes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to create mailbox");
-      }
+        body: JSON.stringify({
+          localPart: newMailboxLocalPart,
+          password: newPassword,
+        }),
+      });
       setCreatingMailbox(false);
       setNewMailboxLocalPart("");
       setNewPassword("");
@@ -152,24 +138,17 @@ export default function ServiceDetails() {
     setSaving(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/hosting/services/${id}/mailboxes/delete`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            address: deletingMailboxFor,
-          }),
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson(`/v1/customer/hosting/services/${id}/mailboxes/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to delete mailbox");
-      }
+        body: JSON.stringify({
+          address: deletingMailboxFor,
+        }),
+      });
       setDeletingMailboxFor(null);
       await refreshMailboxes();
       alert("Mailbox deleted");
@@ -185,25 +164,17 @@ export default function ServiceDetails() {
     setSaving(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/hosting/services/${id}/databases/password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            password: newPassword,
-          }),
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson(`/v1/customer/hosting/services/${id}/databases/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to reset database password");
-      }
+        body: JSON.stringify({
+          password: newPassword,
+        }),
+      });
 
       setResettingDb(false);
       setNewPassword("");
@@ -220,25 +191,17 @@ export default function ServiceDetails() {
     setSaving(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem("npanel_access_token");
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/hosting/services/${id}/ftp/password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            password: newPassword,
-          }),
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson(`/v1/customer/hosting/services/${id}/ftp/password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to reset FTP password");
-      }
+        body: JSON.stringify({
+          password: newPassword,
+        }),
+      });
 
       setResettingFtp(false);
       setNewPassword("");
@@ -257,23 +220,18 @@ export default function ServiceDetails() {
     setSaving(true);
     setError(null);
     try {
-        const token = window.localStorage.getItem("npanel_access_token");
-        const res = await fetch(`http://127.0.0.1:3000/v1/customer/hosting/services/${id}/mailboxes/password`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                address: changingPasswordFor,
-                password: newPassword
-            })
+        const token = getAccessToken();
+        if (!token) return;
+        await requestJson(`/v1/customer/hosting/services/${id}/mailboxes/password`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            address: changingPasswordFor,
+            password: newPassword,
+          }),
         });
-        
-        if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.message || 'Failed to update password');
-        }
         
         setChangingPasswordFor(null);
         setNewPassword("");

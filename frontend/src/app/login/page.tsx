@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, PanelLeft } from "lucide-react";
+import { requestJson } from "@/shared/api/api-client";
 
 type LoginResponse =
   | {
@@ -41,14 +42,14 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:3000/v1/auth/login", {
+      const data = await requestJson<LoginResponse>("/v1/auth/login", {
         method: "POST",
+        auth: false,
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ email, password }),
       });
-      const data = (await res.json()) as LoginResponse;
       if (!data.ok) {
         setError("Invalid email or password");
         setLoading(false);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Activity, RefreshCw, FileText, Database, Terminal } from "lucide-react";
+import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
 type HostingLog = {
   id: string;
@@ -35,18 +36,12 @@ export default function LogsPage() {
   const fetchLogs = async () => {
     setLoadingLogs(true);
     setErrorLogs(null);
-    const token = window.localStorage.getItem("npanel_access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     try {
-      const res = await fetch("http://127.0.0.1:3000/v1/hosting/services/logs", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setLogs(await res.json());
-      } else {
-        throw new Error("Failed to fetch logs");
-      }
+      const data = await requestJson<HostingLog[]>("/v1/hosting/services/logs");
+      setLogs(data);
     } catch (err) {
       setErrorLogs(`Failed to load panel logs: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -56,21 +51,16 @@ export default function LogsPage() {
 
   const fetchLogFiles = async () => {
     setLoadingFiles(true);
-    const token = window.localStorage.getItem("npanel_access_token");
+    const token = getAccessToken();
     if (!token) return;
     try {
-        const res = await fetch("http://127.0.0.1:3000/system/tools/logs/files", {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-            const data = await res.json();
-            setLogFiles(data.files || []);
-            if (data.files && data.files.length > 0 && !selectedFile) {
-                setSelectedFile(data.files[0]);
-            }
+        const data = await requestJson<{ files: string[] }>("/system/tools/logs/files");
+        setLogFiles(data.files || []);
+        if (data.files && data.files.length > 0 && !selectedFile) {
+            setSelectedFile(data.files[0]);
         }
     } catch (e) {
-        console.error("Failed to list log files");
+        setLogFiles([]);
     } finally {
         setLoadingFiles(false);
     }
@@ -78,24 +68,18 @@ export default function LogsPage() {
 
   const fetchFileContent = async (path: string) => {
       setLoadingFile(true);
-      const token = window.localStorage.getItem("npanel_access_token");
+      const token = getAccessToken();
       if (!token) return;
       try {
-          const res = await fetch(`http://127.0.0.1:3000/system/tools/logs/content?path=${encodeURIComponent(path)}`, {
-              headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.ok) {
-              const data = await res.json();
-              setFileContent(data.content);
-              // Auto scroll to bottom
-              setTimeout(() => {
-                  if (contentRef.current) {
-                      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-                  }
-              }, 100);
-          } else {
-              setFileContent("Failed to load file content.");
-          }
+          const data = await requestJson<{ content: string }>(
+            `/system/tools/logs/content?path=${encodeURIComponent(path)}`,
+          );
+          setFileContent(data.content);
+          setTimeout(() => {
+              if (contentRef.current) {
+                  contentRef.current.scrollTop = contentRef.current.scrollHeight;
+              }
+          }, 100);
       } catch (e) {
           setFileContent("Error loading file.");
       } finally {

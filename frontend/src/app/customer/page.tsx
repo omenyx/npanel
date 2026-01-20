@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Server, ExternalLink, HardDrive, Database, Mail } from "lucide-react";
+import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
 interface PlanLimits {
   diskQuotaMb: number;
@@ -33,18 +34,12 @@ export default function CustomerDashboard() {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const token = window.localStorage.getItem("npanel_access_token");
-        const res = await fetch("http://127.0.0.1:3000/v1/customer/hosting/services", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setServices(data);
-        }
+        const token = getAccessToken();
+        if (!token) return;
+        const data = await requestJson<HostingService[]>("/v1/customer/hosting/services");
+        setServices(data);
       } catch (err) {
-        console.error(err);
+        return;
       } finally {
         setLoading(false);
       }

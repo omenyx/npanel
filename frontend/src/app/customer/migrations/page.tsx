@@ -10,6 +10,7 @@ import {
   ScrollText,
   AlertTriangle,
 } from "lucide-react";
+import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
 type HostingService = {
   id: string;
@@ -44,10 +45,6 @@ type MigrationLog = {
   accountId: string | null;
 };
 
-function getToken() {
-  return window.localStorage.getItem("npanel_access_token");
-}
-
 export default function CustomerMigrationsPage() {
   const [services, setServices] = useState<HostingService[]>([]);
   const [jobs, setJobs] = useState<MigrationJob[]>([]);
@@ -75,14 +72,14 @@ export default function CustomerMigrationsPage() {
       setLoading(true);
       setError(null);
       try {
-        const token = getToken();
-        const headers = { Authorization: `Bearer ${token}` };
-        const [svcRes, jobsRes] = await Promise.all([
-          fetch("http://127.0.0.1:3000/v1/customer/hosting/services", { headers }),
-          fetch("http://127.0.0.1:3000/v1/customer/migrations", { headers }),
+        const token = getAccessToken();
+        if (!token) return;
+        const [servicesData, jobsData] = await Promise.all([
+          requestJson<HostingService[]>("/v1/customer/hosting/services"),
+          requestJson<MigrationJob[]>("/v1/customer/migrations"),
         ]);
-        if (svcRes.ok) setServices(await svcRes.json());
-        if (jobsRes.ok) setJobs(await jobsRes.json());
+        setServices(servicesData);
+        setJobs(jobsData);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -98,18 +95,14 @@ export default function CustomerMigrationsPage() {
   }, [selectedService]);
 
   const refreshJobDetails = async (jobId: string) => {
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
-    const [stepsRes, logsRes] = await Promise.all([
-      fetch(`http://127.0.0.1:3000/v1/customer/migrations/${jobId}/steps`, {
-        headers,
-      }),
-      fetch(`http://127.0.0.1:3000/v1/customer/migrations/${jobId}/logs`, {
-        headers,
-      }),
+    const token = getAccessToken();
+    if (!token) return;
+    const [stepsData, logsData] = await Promise.all([
+      requestJson<MigrationStep[]>(`/v1/customer/migrations/${jobId}/steps`),
+      requestJson<MigrationLog[]>(`/v1/customer/migrations/${jobId}/logs`),
     ]);
-    if (stepsRes.ok) setSteps(await stepsRes.json());
-    if (logsRes.ok) setLogs(await logsRes.json());
+    setSteps(stepsData);
+    setLogs(logsData);
   };
 
   const startMigration = async (e: React.FormEvent) => {
@@ -123,15 +116,12 @@ export default function CustomerMigrationsPage() {
       if (!sourceUsername.trim()) throw new Error("Enter cPanel username");
       if (!sourcePrimaryDomain.trim()) throw new Error("Enter primary domain");
 
-      const token = getToken();
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
+      const token = getAccessToken();
+      if (!token) return;
 
-      const createRes = await fetch("http://127.0.0.1:3000/v1/customer/migrations", {
+      const job = await requestJson<MigrationJob>("/v1/customer/migrations", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: `${sourcePrimaryDomain} transfer`,
           sourceType: "cpanel_live_ssh",
@@ -143,42 +133,21 @@ export default function CustomerMigrationsPage() {
           dryRun: false,
         }),
       });
-      if (!createRes.ok) {
-        const data = await createRes.json();
-        throw new Error(data.message || "Failed to create migration job");
-      }
-      const job: MigrationJob = await createRes.json();
 
-      const addRes = await fetch(
-        `http://127.0.0.1:3000/v1/customer/migrations/${job.id}/accounts`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            sourceUsername: sourceUsername.trim(),
-            sourcePrimaryDomain: sourcePrimaryDomain.trim(),
-            targetServiceId,
-          }),
-        },
-      );
-      if (!addRes.ok) {
-        const data = await addRes.json();
-        throw new Error(data.message || "Failed to add account to job");
-      }
-
-      const planRes = await fetch(
-        `http://127.0.0.1:3000/v1/customer/migrations/${job.id}/plan`,
-        { method: "POST", headers },
-      );
-      if (!planRes.ok) {
-        const data = await planRes.json();
-        throw new Error(data.message || "Failed to plan migration steps");
-      }
-
-      const jobsRes = await fetch("http://127.0.0.1:3000/v1/customer/migrations", {
-        headers: { Authorization: `Bearer ${token}` },
+      await requestJson(`/v1/customer/migrations/${job.id}/accounts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceUsername: sourceUsername.trim(),
+          sourcePrimaryDomain: sourcePrimaryDomain.trim(),
+          targetServiceId,
+        }),
       });
-      if (jobsRes.ok) setJobs(await jobsRes.json());
+
+      await requestJson(`/v1/customer/migrations/${job.id}/plan`, { method: "POST" });
+
+      const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
+      setJobs(jobsData);
 
       setActiveJobId(job.id);
       await refreshJobDetails(job.id);
@@ -194,21 +163,12 @@ export default function CustomerMigrationsPage() {
     setBusy(true);
     setError(null);
     try {
-      const token = getToken();
-      const headers = { Authorization: `Bearer ${token}` };
-      const res = await fetch(
-        `http://127.0.0.1:3000/v1/customer/migrations/${activeJobId}/run-next`,
-        { method: "POST", headers },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Failed to run next step");
-      }
+      const token = getAccessToken();
+      if (!token) return;
+      await requestJson(`/v1/customer/migrations/${activeJobId}/run-next`, { method: "POST" });
       await refreshJobDetails(activeJobId);
-      const jobsRes = await fetch("http://127.0.0.1:3000/v1/customer/migrations", {
-        headers,
-      });
-      if (jobsRes.ok) setJobs(await jobsRes.json());
+      const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
+      setJobs(jobsData);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -364,11 +324,10 @@ export default function CustomerMigrationsPage() {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  const token = getToken();
-                  const res = await fetch("http://127.0.0.1:3000/v1/customer/migrations", {
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
-                  if (res.ok) setJobs(await res.json());
+                  const token = getAccessToken();
+                  if (!token) return;
+                  const jobsData = await requestJson<MigrationJob[]>("/v1/customer/migrations");
+                  setJobs(jobsData);
                 } finally {
                   setBusy(false);
                 }
@@ -491,4 +450,3 @@ export default function CustomerMigrationsPage() {
     </div>
   );
 }
-
