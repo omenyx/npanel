@@ -398,18 +398,17 @@ ensure_repo() {
   local dest="$NPANEL_DIR"
 
   if [[ -d "$dest/.git" ]]; then
-    git config --global --add safe.directory "$dest"
-    if [[ "$MODE" == "update" ]]; then
-      log "Updating repo in $dest"
-      cd "$dest"
-      git fetch --tags origin
-      if [[ -n "$NPANEL_REF" ]]; then
-        git checkout -f "$NPANEL_REF"
-      else
-        git checkout -f "$NPANEL_BRANCH"
-        git reset --hard "origin/$NPANEL_BRANCH"
-      fi
-      return
+    git config --global --add safe.directory "$dest" || true
+    log "Fetching latest repo in $dest"
+    cd "$dest"
+    git fetch --tags origin
+    if [[ -n "$NPANEL_REF" ]]; then
+      git checkout -f "$NPANEL_REF"
+      git clean -fd
+    else
+      git checkout -f "$NPANEL_BRANCH"
+      git reset --hard "origin/$NPANEL_BRANCH"
+      git clean -fd
     fi
     return
   fi
