@@ -429,6 +429,7 @@ resolve_tool_cmds() {
   CMD_RNDC="$(command -v rndc || true)"
   CMD_EXIM="$(command -v exim || true)"
   CMD_DOVECOT="$(command -v dovecot || true)"
+  CMD_NPM="$(command -v npm || true)"
 
   if check_cmd php-fpm8.2; then
     CMD_PHP_FPM="$(command -v php-fpm8.2)"
@@ -654,7 +655,6 @@ stop_npanel_services() {
   log "Stopping Npanel services before rebuild..."
   if check_cmd systemctl; then
     systemctl stop npanel-backend.service npanel-frontend.service 2>/dev/null || true
-    return
   fi
   if check_cmd lsof; then
     local pids
@@ -724,16 +724,17 @@ setup_services() {
     return
   fi
 
-  cat > /etc/systemd/system/npanel-backend.service <<'UNIT'
+  resolve_tool_cmds
+  cat > /etc/systemd/system/npanel-backend.service <<UNIT
 [Unit]
 Description=Npanel Backend
 After=network.target mysql.service mariadb.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/npanel/backend
-EnvironmentFile=/opt/npanel/backend/.env
-ExecStart=/usr/bin/npm run start:prod
+WorkingDirectory=$NPANEL_DIR/backend
+EnvironmentFile=$NPANEL_DIR/backend/.env
+ExecStart=${CMD_NPM:-/usr/bin/npm} run start:prod
 Restart=always
 User=root
 StandardOutput=append:/var/log/npanel-backend.log
@@ -743,15 +744,15 @@ StandardError=append:/var/log/npanel-backend.log
 WantedBy=multi-user.target
 UNIT
 
-  cat > /etc/systemd/system/npanel-frontend.service <<'UNIT'
+  cat > /etc/systemd/system/npanel-frontend.service <<UNIT
 [Unit]
 Description=Npanel Frontend
 After=network.target npanel-backend.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/npanel/frontend
-ExecStart=/usr/bin/npm start -- -p 3001
+WorkingDirectory=$NPANEL_DIR/frontend
+ExecStart=${CMD_NPM:-/usr/bin/npm} start -- -p 3001
 Restart=always
 User=root
 StandardOutput=append:/var/log/npanel-frontend.log
@@ -766,12 +767,37 @@ UNIT
   systemctl restart npanel-backend.service npanel-frontend.service
 }
 
+dump_npanel_debug() {
+  log "Npanel debug info (backend not reachable)"
+  if check_cmd systemctl; then
+    systemctl status npanel-backend.service -l --no-pager 2>/dev/null || true
+    systemctl status npanel-frontend.service -l --no-pager 2>/dev/null || true
+    if check_cmd journalctl; then
+      journalctl -u npanel-backend.service -n 200 --no-pager 2>/dev/null || true
+      journalctl -u npanel-frontend.service -n 200 --no-pager 2>/dev/null || true
+    fi
+  fi
+  if [[ -f /var/log/npanel-backend.log ]]; then
+    tail -n 200 /var/log/npanel-backend.log 2>/dev/null || true
+  fi
+  if [[ -f /var/log/npanel-frontend.log ]]; then
+    tail -n 200 /var/log/npanel-frontend.log 2>/dev/null || true
+  fi
+  if check_cmd lsof; then
+    lsof -nP -iTCP:3000 -sTCP:LISTEN 2>/dev/null || true
+    lsof -nP -iTCP:3001 -sTCP:LISTEN 2>/dev/null || true
+  fi
+}
+
 verify_deployment() {
   local retries=0
-  local max_retries=10
+  local max_retries=30
   until curl -fsS http://127.0.0.1:3000/system/tools/status >/dev/null 2>&1; do
     retries=$((retries+1))
-    [[ "$retries" -le "$max_retries" ]] || die "Backend failed to start on port 3000."
+    if [[ "$retries" -gt "$max_retries" ]]; then
+      dump_npanel_debug
+      die "Backend failed to start on port 3000."
+    fi
     sleep 3
   done
   retries=0
