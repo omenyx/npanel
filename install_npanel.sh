@@ -650,6 +650,25 @@ install_npanel_dependencies() {
   popd >/dev/null
 }
 
+stop_npanel_services() {
+  log "Stopping Npanel services before rebuild..."
+  if check_cmd systemctl; then
+    systemctl stop npanel-backend.service npanel-frontend.service 2>/dev/null || true
+    return
+  fi
+  if check_cmd lsof; then
+    local pids
+    pids="$(lsof -ti :3000 2>/dev/null || true)"
+    [[ -n "$pids" ]] && kill $pids 2>/dev/null || true
+    pids="$(lsof -ti :3001 2>/dev/null || true)"
+    [[ -n "$pids" ]] && kill $pids 2>/dev/null || true
+  fi
+  pkill -f "npanel-backend" 2>/dev/null || true
+  pkill -f "npanel-frontend" 2>/dev/null || true
+  pkill -f "npm run start:prod" 2>/dev/null || true
+  pkill -f "npm start -- -p 3001" 2>/dev/null || true
+}
+
 configure_nginx() {
   local conf=""
   local enable_link=""
@@ -806,6 +825,7 @@ main() {
   configure_dovecot_npanel
   configure_exim_npanel
   configure_nginx
+  stop_npanel_services
   install_npanel_dependencies
   setup_services
   verify_deployment
