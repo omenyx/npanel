@@ -181,24 +181,24 @@ install_dependencies() {
         pkg_update
       fi
       ensure_nodesource_20
-      pkg_install lsof git rsync openssh-client build-essential
+      pkg_install lsof git rsync openssh-client build-essential openssl
       pkg_install nginx mysql-server exim4 dovecot-core dovecot-imapd bind9 pure-ftpd || true
       pkg_install php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd || true
       pkg_install pdns-server pdns-backend-mysql || true
       ;;
     dnf|yum)
-      pkg_install curl ca-certificates git rsync openssh-clients lsof
+      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl
       pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot pure-ftpd || true
       pkg_install bind-utils bind || true
       ensure_nodesource_20
       ;;
     pacman)
-      pkg_install curl ca-certificates git rsync openssh lsof base-devel
+      pkg_install curl ca-certificates git rsync openssh lsof base-devel openssl
       pkg_install nginx mariadb php php-fpm php-gd php-intl php-mbstring php-xml php-zip dovecot exim pure-ftpd || true
       ensure_nodesource_20
       ;;
     zypper)
-      pkg_install curl ca-certificates git rsync openssh lsof
+      pkg_install curl ca-certificates git rsync openssh lsof openssl
       pkg_install nginx mariadb mariadb-tools php-fpm php8-mysql php8-mbstring php8-xmlreader php8-intl php8-zip php8-gd exim dovecot pure-ftpd || true
       ensure_nodesource_20
       ;;
@@ -471,9 +471,147 @@ NPANEL_RSYNC_CMD=${CMD_RSYNC:-/usr/bin/rsync}
 NPANEL_BIND_RNDC_CMD=${CMD_RNDC:-/usr/sbin/rndc}
 NPANEL_EXIM_CMD=${CMD_EXIM:-/usr/sbin/exim}
 NPANEL_DOVECOT_CMD=${CMD_DOVECOT:-/usr/sbin/dovecot}
-NPANEL_FTP_CMD=
-NPANEL_MAIL_CMD=
+NPANEL_FTP_CMD=/usr/local/bin/npanel-ftp
+NPANEL_MAIL_CMD=/usr/local/bin/npanel-mail
 EOF
+}
+
+ensure_env_defaults() {
+  local dest="$NPANEL_DIR/backend/.env"
+  if [[ ! -f "$dest" ]]; then
+    return
+  fi
+  if ! grep -qE '^NPANEL_FTP_CMD=' "$dest"; then
+    echo "NPANEL_FTP_CMD=/usr/local/bin/npanel-ftp" >> "$dest"
+  else
+    sed -i 's|^NPANEL_FTP_CMD=$|NPANEL_FTP_CMD=/usr/local/bin/npanel-ftp|' "$dest" || true
+  fi
+  if ! grep -qE '^NPANEL_MAIL_CMD=' "$dest"; then
+    echo "NPANEL_MAIL_CMD=/usr/local/bin/npanel-mail" >> "$dest"
+  else
+    sed -i 's|^NPANEL_MAIL_CMD=$|NPANEL_MAIL_CMD=/usr/local/bin/npanel-mail|' "$dest" || true
+  fi
+}
+
+install_management_scripts() {
+  local src_ftp="$NPANEL_DIR/backend/scripts/npanel-ftp"
+  local src_mail="$NPANEL_DIR/backend/scripts/npanel-mail"
+  if [[ -f "$src_ftp" ]]; then
+    install -m 0755 "$src_ftp" /usr/local/bin/npanel-ftp
+  fi
+  if [[ -f "$src_mail" ]]; then
+    install -m 0755 "$src_mail" /usr/local/bin/npanel-mail
+  fi
+}
+
+configure_dovecot_npanel() {
+  if [[ ! -d /etc/dovecot ]]; then
+    return
+  fi
+  mkdir -p /etc/npanel
+  touch /etc/npanel/dovecot-passwd
+  touch /etc/npanel/mail-domains
+  chmod 600 /etc/npanel/dovecot-passwd || true
+  if ! getent group vmail >/dev/null 2>&1; then
+    groupadd -g 5000 vmail >/dev/null 2>&1 || groupadd vmail || true
+  fi
+  if ! id -u vmail >/dev/null 2>&1; then
+    useradd -u 5000 -g vmail -d /var/mail/vhosts -s /usr/sbin/nologin vmail >/dev/null 2>&1 || true
+  fi
+  mkdir -p /var/mail/vhosts
+  chown -R vmail:vmail /var/mail/vhosts || true
+
+  if [[ -d /etc/dovecot/conf.d ]]; then
+    cat > /etc/dovecot/conf.d/99-npanel.conf <<'EOF'
+disable_plaintext_auth = no
+auth_mechanisms = plain login
+passdb {
+  driver = passwd-file
+  args = scheme=SHA512-CRYPT username_format=%u /etc/npanel/dovecot-passwd
+}
+userdb {
+  driver = static
+  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
+}
+mail_location = maildir:~/Maildir
+EOF
+  fi
+  svc restart dovecot
+}
+
+configure_exim_npanel() {
+  mkdir -p /etc/npanel
+  touch /etc/npanel/mail-domains
+
+  if [[ -d /etc/exim4/conf.d ]]; then
+    mkdir -p /etc/exim4/conf.d/router /etc/exim4/conf.d/transport
+    cat > /etc/exim4/conf.d/router/950_npanel_virtual <<'EOF'
+npanel_virtual_router:
+  driver = accept
+  domains = lsearch;/etc/npanel/mail-domains
+  condition = ${if exists{/var/mail/vhosts/${domain}/${local_part}/Maildir}{yes}{no}}
+  transport = npanel_virtual_transport
+  no_verify
+EOF
+    cat > /etc/exim4/conf.d/transport/950_npanel_virtual <<'EOF'
+npanel_virtual_transport:
+  driver = appendfile
+  directory = /var/mail/vhosts/${domain}/${local_part}/Maildir
+  maildir_format = true
+  create_directory = true
+  mode = 0600
+  directory_mode = 0700
+  user = vmail
+  group = vmail
+EOF
+    if check_cmd update-exim4.conf; then
+      update-exim4.conf || true
+    fi
+    svc restart exim4
+    return
+  fi
+
+  if [[ -f /etc/exim/exim.conf ]]; then
+    local conf=/etc/exim/exim.conf
+    if ! grep -q 'npanel_virtual_router:' "$conf"; then
+      awk '
+        BEGIN { inrouters=0; intrans=0 }
+        /^begin[[:space:]]+routers/ { print; inrouters=1; next }
+        /^begin[[:space:]]+transports/ { 
+          if (inrouters==1) {
+            print "";
+            print "npanel_virtual_router:";
+            print "  driver = accept";
+            print "  domains = lsearch;/etc/npanel/mail-domains";
+            print "  condition = ${if exists{/var/mail/vhosts/${domain}/${local_part}/Maildir}{yes}{no}}";
+            print "  transport = npanel_virtual_transport";
+            print "  no_verify";
+            print "";
+            inrouters=0;
+          }
+          print;
+          intrans=1;
+          next
+        }
+        { print }
+        END {
+          if (intrans==1) {
+            print "";
+            print "npanel_virtual_transport:";
+            print "  driver = appendfile";
+            print "  directory = /var/mail/vhosts/${domain}/${local_part}/Maildir";
+            print "  maildir_format = true";
+            print "  create_directory = true";
+            print "  mode = 0600";
+            print "  directory_mode = 0700";
+            print "  user = vmail";
+            print "  group = vmail";
+          }
+        }
+      ' "$conf" > "${conf}.npanel.tmp" && mv "${conf}.npanel.tmp" "$conf"
+    fi
+    svc restart exim
+  fi
 }
 
 verify_tools() {
@@ -660,10 +798,14 @@ main() {
   fi
 
   ensure_repo
+  install_management_scripts
   write_env
+  ensure_env_defaults
   verify_tools
   ensure_services_start
   setup_mysql
+  configure_dovecot_npanel
+  configure_exim_npanel
   configure_nginx
   install_npanel_dependencies
   setup_services

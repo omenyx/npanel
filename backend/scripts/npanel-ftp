@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+passwd_file="${NPANEL_PUREPW_PASSWD_FILE:-/etc/pure-ftpd/pureftpd.passwd}"
+
+require_bin() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+die() {
+  echo "$1" >&2
+  exit 2
+}
+
+ensure_files() {
+  local dir
+  dir="$(dirname "$passwd_file")"
+  mkdir -p "$dir"
+  touch "$passwd_file"
+}
+
+pure_pw_bin="$(command -v pure-pw || true)"
+[[ -n "$pure_pw_bin" ]] || die "pure-pw not found"
+
+case "$cmd" in
+  present)
+    username="${1:-}"
+    home_dir="${2:-}"
+    shift 2 || true
+    [[ -n "$username" && -n "$home_dir" ]] || die "usage: npanel-ftp present <username> <home_dir> [password <password>]"
+    ensure_files
+    password=""
+    if [[ "${1:-}" == "password" ]]; then
+      password="${2:-}"
+      shift 2 || true
+    fi
+
+    if ! id -u "$username" >/dev/null 2>&1; then
+      die "system_user_missing"
+    fi
+
+    if grep -qE "^${username}:" "$passwd_file" 2>/dev/null; then
+      "$pure_pw_bin" usermod "$username" -f "$passwd_file" -u "$username" -d "$home_dir" -m >/dev/null
+    else
+      if [[ -z "$password" ]]; then
+        password="$(openssl rand -base64 24 2>/dev/null || true)"
+      fi
+      printf "%s\n%s\n" "$password" "$password" | "$pure_pw_bin" useradd "$username" -f "$passwd_file" -u "$username" -d "$home_dir" -m >/dev/null
+    fi
+
+    if [[ -n "$password" ]]; then
+      printf "%s\n%s\n" "$password" "$password" | "$pure_pw_bin" passwd "$username" -f "$passwd_file" -m >/dev/null
+    fi
+    ;;
+  absent)
+    username="${1:-}"
+    [[ -n "$username" ]] || die "usage: npanel-ftp absent <username>"
+    ensure_files
+    "$pure_pw_bin" userdel "$username" -f "$passwd_file" -m >/dev/null || true
+    ;;
+  password)
+    username="${1:-}"
+    password="${2:-}"
+    [[ -n "$username" && -n "$password" ]] || die "usage: npanel-ftp password <username> <password>"
+    ensure_files
+    printf "%s\n%s\n" "$password" "$password" | "$pure_pw_bin" passwd "$username" -f "$passwd_file" -m >/dev/null
+    ;;
+  *)
+    die "usage: npanel-ftp <present|absent|password> ..."
+    ;;
+esac
+

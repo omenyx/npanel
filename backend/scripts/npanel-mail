@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+state_dir="${NPANEL_MAIL_STATE_DIR:-/etc/npanel}"
+passwd_file="${NPANEL_DOVECOT_PASSWD_FILE:-${state_dir}/dovecot-passwd}"
+domains_file="${NPANEL_MAIL_DOMAINS_FILE:-${state_dir}/mail-domains}"
+mail_root="${NPANEL_MAIL_ROOT:-/var/mail/vhosts}"
+vmail_user="${NPANEL_VMAIL_USER:-vmail}"
+vmail_group="${NPANEL_VMAIL_GROUP:-vmail}"
+vmail_uid="${NPANEL_VMAIL_UID:-5000}"
+vmail_gid="${NPANEL_VMAIL_GID:-5000}"
+
+die() {
+  echo "$1" >&2
+  exit 2
+}
+
+ensure_vmail_user() {
+  if getent group "$vmail_group" >/dev/null 2>&1; then
+    :
+  else
+    groupadd -g "$vmail_gid" "$vmail_group" >/dev/null 2>&1 || groupadd "$vmail_group"
+  fi
+  if id -u "$vmail_user" >/dev/null 2>&1; then
+    :
+  else
+    useradd -u "$vmail_uid" -g "$vmail_group" -d "$mail_root" -s /usr/sbin/nologin "$vmail_user" >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_files() {
+  mkdir -p "$state_dir"
+  touch "$passwd_file"
+  touch "$domains_file"
+  chmod 600 "$passwd_file" || true
+}
+
+hash_password() {
+  local password="$1"
+  if command -v doveadm >/dev/null 2>&1; then
+    doveadm pw -s SHA512-CRYPT -p "$password"
+    return
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl passwd -6 "$password"
+    return
+  fi
+  die "no_password_hasher"
+}
+
+parse_email() {
+  local email="$1"
+  [[ "$email" == *"@"* ]] || die "invalid_email"
+  local localpart="${email%@*}"
+  local domain="${email#*@}"
+  [[ -n "$localpart" && -n "$domain" ]] || die "invalid_email"
+  echo "$localpart" "$domain"
+}
+
+ensure_domain_present() {
+  local domain="$1"
+  if ! grep -qxF "$domain" "$domains_file" 2>/dev/null; then
+    echo "$domain" >> "$domains_file"
+  fi
+}
+
+upsert_passwd_line() {
+  local email="$1"
+  local hash="$2"
+  local home="$3"
+  local line="${email}:${hash}:${vmail_uid}:${vmail_gid}::${home}::userdb_mail=maildir:~/Maildir"
+  if grep -qE "^${email}:" "$passwd_file" 2>/dev/null; then
+    tmp="$(mktemp)"
+    awk -v email="$email" -v line="$line" 'BEGIN{FS=OFS=":"} $1==email{$0=line} {print}' "$passwd_file" > "$tmp"
+    mv "$tmp" "$passwd_file"
+  else
+    echo "$line" >> "$passwd_file"
+  fi
+}
+
+remove_passwd_line() {
+  local email="$1"
+  tmp="$(mktemp)"
+  awk -v email="$email" 'BEGIN{FS=OFS=":"} $1!=email{print}' "$passwd_file" > "$tmp"
+  mv "$tmp" "$passwd_file"
+}
+
+ensure_maildir() {
+  local home="$1"
+  mkdir -p "$home/Maildir/cur" "$home/Maildir/new" "$home/Maildir/tmp"
+  chown -R "${vmail_user}:${vmail_group}" "$home" || true
+  chmod -R 700 "$home" || true
+}
+
+case "$cmd" in
+  present)
+    email="${1:-}"
+    shift || true
+    [[ -n "$email" ]] || die "usage: npanel-mail present <email> [quotaMb <n>] [password <password>]"
+    read -r localpart domain < <(parse_email "$email")
+    quota=""
+    password=""
+    while [[ $# -gt 0 ]]; do
+      key="$1"
+      case "$key" in
+        quotaMb)
+          quota="${2:-}"
+          shift 2 || true
+          ;;
+        password)
+          password="${2:-}"
+          shift 2 || true
+          ;;
+        *)
+          shift || true
+          ;;
+      esac
+    done
+
+    ensure_vmail_user
+    ensure_files
+    ensure_domain_present "$domain"
+    home="${mail_root}/${domain}/${localpart}"
+    mkdir -p "$home"
+    if [[ -z "$password" ]]; then
+      password="$(openssl rand -base64 24 2>/dev/null || true)"
+    fi
+    hash="$(hash_password "$password")"
+    upsert_passwd_line "$email" "$hash" "$home"
+    ensure_maildir "$home"
+    ;;
+  absent)
+    email="${1:-}"
+    [[ -n "$email" ]] || die "usage: npanel-mail absent <email>"
+    read -r localpart domain < <(parse_email "$email")
+    ensure_files
+    remove_passwd_line "$email"
+    home="${mail_root}/${domain}/${localpart}"
+    rm -rf "$home" || true
+    ;;
+  passwd)
+    email="${1:-}"
+    password="${2:-}"
+    [[ -n "$email" && -n "$password" ]] || die "usage: npanel-mail passwd <email> <password>"
+    read -r localpart domain < <(parse_email "$email")
+    ensure_vmail_user
+    ensure_files
+    home="${mail_root}/${domain}/${localpart}"
+    mkdir -p "$home"
+    hash="$(hash_password "$password")"
+    upsert_passwd_line "$email" "$hash" "$home"
+    ensure_maildir "$home"
+    ;;
+  list)
+    domain="${1:-}"
+    [[ -n "$domain" ]] || die "usage: npanel-mail list <domain>"
+    ensure_files
+    awk -F: -v dom="@$domain" '$1 ~ dom"$" {print $1}' "$passwd_file" || true
+    ;;
+  *)
+    die "usage: npanel-mail <present|absent|passwd|list> ..."
+    ;;
+esac
+

@@ -62,13 +62,31 @@ export class ToolsController {
       'certbot',
       'ufw',
       'useradd',
+      'userdel',
       'quota', // Add quota to the list
+      'pure-pw',
+      'doveadm',
     ];
 
     const results = {};
     for (const tool of tools) {
       const status = await this.toolResolver.statusFor(tool);
       results[tool] = status.available;
+    }
+
+    const mailCmd = process.env.NPANEL_MAIL_CMD;
+    if (typeof mailCmd === 'string' && mailCmd.length > 0) {
+      const status = await this.toolResolver.statusFor(mailCmd);
+      results['mail_cmd'] = status.available;
+    } else {
+      results['mail_cmd'] = false;
+    }
+    const ftpCmd = process.env.NPANEL_FTP_CMD;
+    if (typeof ftpCmd === 'string' && ftpCmd.length > 0) {
+      const status = await this.toolResolver.statusFor(ftpCmd);
+      results['ftp_cmd'] = status.available;
+    } else {
+      results['ftp_cmd'] = false;
     }
 
     // Get enhanced quota status
@@ -109,8 +127,8 @@ export class ToolsController {
       serverInfo: {
         defaultIpv4: '127.0.0.1',
         dnsBackend: 'PowerDNS',
-        mailBackend: 'Exim4 + Dovecot',
-        ftpBackend: 'System Users',
+        mailBackend: 'Exim + Dovecot',
+        ftpBackend: 'Pure-FTPd',
       },
       quotaStatus, // Expose detailed quota status
       systemStats: {
