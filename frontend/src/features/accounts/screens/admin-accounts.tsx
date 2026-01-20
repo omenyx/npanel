@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Users, Play, Pause, Trash2, Plus } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import { normalizeToolStatusList } from "@/shared/api/system-status";
 
 type Customer = {
   id: string;
@@ -25,6 +26,20 @@ type HostingPlan = {
   name: string;
 };
 
+type HostingLogEntry = {
+  id: string;
+  serviceId: string;
+  adapter: string;
+  operation: string;
+  targetKind: string;
+  targetKey: string;
+  success: boolean;
+  dryRun: boolean;
+  details: Record<string, unknown> | null;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
 export function AdminAccountsScreen() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [services, setServices] = useState<HostingService[]>([]);
@@ -40,8 +55,12 @@ export function AdminAccountsScreen() {
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [newServiceDomain, setNewServiceDomain] = useState("");
   const [newServicePlan, setNewServicePlan] = useState("");
-  const [autoProvision, setAutoProvision] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
+  const [provisionLogs, setProvisionLogs] = useState<HostingLogEntry[]>([]);
+  const [provisionServiceId, setProvisionServiceId] = useState<string | null>(null);
+
+  const logPollTimerRef = useRef<number | null>(null);
+  const seenLogIdsRef = useRef<Set<string>>(new Set());
 
   const [serviceActionId, setServiceActionId] = useState<string | null>(null);
   const [serviceActionLabel, setServiceActionLabel] = useState<string | null>(null);
@@ -101,15 +120,14 @@ export function AdminAccountsScreen() {
         if (plansData.length > 0) {
           setNewServicePlan((prev) => prev || plansData[0].name);
         }
-        if (Array.isArray(toolsData?.tools)) {
-          const critical = ["useradd", "nginx", "php-fpm", "mysql"];
-          const missing = toolsData.tools
-            .filter((t: any) => critical.includes(t.name) && !t.available)
-            .map((t: any) => t.name);
+        const toolList = normalizeToolStatusList(toolsData?.tools);
+        if (toolList.length > 0) {
+          const critical = ["useradd", "nginx", "php-fpm", "mysql", "mail_cmd", "ftp_cmd"];
+          const missing = toolList
+            .filter((t) => critical.includes(t.name) && !t.available)
+            .map((t) => t.name);
           if (missing.length > 0) {
-            setToolWarning(
-              `Auto-provision requires: ${missing.join(", ")} to be available.`,
-            );
+            setToolWarning(`Provisioning requires: ${missing.join(", ")} to be available.`);
           }
         }
       } catch {
@@ -121,10 +139,52 @@ export function AdminAccountsScreen() {
 
   const [creationCredentials, setCreationCredentials] = useState<any | null>(null);
 
+  const stopLogPolling = () => {
+    if (logPollTimerRef.current != null) {
+      window.clearInterval(logPollTimerRef.current);
+      logPollTimerRef.current = null;
+    }
+  };
+
+  const startLogPolling = (serviceId: string) => {
+    stopLogPolling();
+    setProvisionLogs([]);
+    seenLogIdsRef.current = new Set();
+    const fetchOnce = async () => {
+      try {
+        const entries = await requestJson<HostingLogEntry[]>(
+          `/v1/hosting/services/${serviceId}/logs`,
+        );
+        const asc = [...entries].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        );
+        const next: HostingLogEntry[] = [];
+        for (const e of asc) {
+          if (!seenLogIdsRef.current.has(e.id)) {
+            seenLogIdsRef.current.add(e.id);
+            next.push(e);
+          }
+        }
+        if (next.length > 0) {
+          setProvisionLogs((prev) => [...prev, ...next]);
+        }
+      } catch {
+        return;
+      }
+    };
+    fetchOnce();
+    logPollTimerRef.current = window.setInterval(fetchOnce, 1000);
+  };
+
+  useEffect(() => {
+    return () => stopLogPolling();
+  }, []);
+
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setWizardStep(2);
+    setCreationCredentials(null);
     const token = getAccessToken();
     if (!token) return;
 
@@ -137,34 +197,45 @@ export function AdminAccountsScreen() {
         body: JSON.stringify({
           primaryDomain: newServiceDomain,
           planName: newServicePlan,
-          autoProvision,
+          autoProvision: false,
           ...(customerMode === "existing"
             ? { customerId: newServiceCustomerId }
             : { customer: { name: newCustomerName, email: newCustomerEmail } }),
         }),
       });
       const newService = payload?.service ?? payload;
+      setProvisionServiceId(newService.id);
       setServices((prev) => [newService, ...prev]);
-      if (payload?.credentials) {
-        setCreationCredentials(payload);
-        setDetailsServiceId(newService.id);
-        setShowDetailsModal(true);
-      }
-
-      if (autoProvision) {
-        await requestJson(`/v1/hosting/services/${newService.id}/provision`, {
+      startLogPolling(newService.id);
+      const provisioned = await requestJson<any>(
+        `/v1/hosting/services/${newService.id}/provision`,
+        {
           method: "POST",
-        });
-        await refreshSingleService(newService.id);
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ returnCredentials: true }),
+        },
+      );
+      stopLogPolling();
+      const updated = provisioned?.service ?? provisioned;
+      setServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      if (provisioned?.credentials) {
+        setCreationCredentials(provisioned);
+        setDetailsServiceId(updated.id);
+        setShowDetailsModal(true);
       }
 
       setShowWizard(false);
       setNewServiceDomain("");
       setNewServiceCustomerId("");
+      setProvisionServiceId(null);
       setWizardStep(1);
     } catch (err) {
+      stopLogPolling();
       setError(err instanceof Error ? err.message : "Failed to create account");
       setWizardStep(1);
+      setProvisionServiceId(null);
     }
   };
 
@@ -418,23 +489,58 @@ export function AdminAccountsScreen() {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="autoProvision"
-                  checked={autoProvision}
-                  onChange={(e) => setAutoProvision(e.target.checked)}
-                  className="rounded border-border bg-surface text-primary focus:ring-primary"
-                  disabled={wizardStep > 1}
-                />
-                <label htmlFor="autoProvision" className="text-sm text-text-main select-none">
-                  Auto-provision after create
-                </label>
-              </div>
-
-              {autoProvision && toolWarning && (
+              {toolWarning && (
                 <div className="text-[11px] text-warning bg-warning/10 border border-warning/20 rounded px-3 py-2">
                   {toolWarning}
+                </div>
+              )}
+
+              {wizardStep === 2 && (
+                <div className="rounded-[var(--radius-card)] border border-border bg-black/20 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                    Provisioning Activity
+                  </div>
+                  <div className="mt-2 max-h-56 overflow-y-auto space-y-2 pr-1">
+                    {provisionLogs.length === 0 ? (
+                      <div className="text-xs text-text-muted">Waiting for activity...</div>
+                    ) : (
+                      provisionLogs.map((l) => (
+                        <div
+                          key={l.id}
+                          className="rounded border border-border bg-surface/40 px-3 py-2 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-mono text-text-main">
+                              {l.adapter}:{l.operation} {l.targetKind} {l.targetKey}
+                            </div>
+                            <div
+                              className={`text-[10px] font-semibold uppercase ${
+                                l.success ? "text-success" : "text-danger"
+                              }`}
+                            >
+                              {l.success ? "OK" : "FAIL"}
+                            </div>
+                          </div>
+                          {l.errorMessage && (
+                            <div className="mt-1 text-danger/90 font-mono">{l.errorMessage}</div>
+                          )}
+                          {l.details && (
+                            <pre className="mt-1 whitespace-pre-wrap break-words text-[10px] text-text-muted font-mono">
+                              {JSON.stringify(l.details, null, 2)}
+                            </pre>
+                          )}
+                          <div className="mt-1 text-[10px] text-text-muted">
+                            {new Date(l.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {provisionServiceId && (
+                    <div className="mt-2 text-[10px] text-text-muted font-mono">
+                      Service ID: {provisionServiceId}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -457,7 +563,7 @@ export function AdminAccountsScreen() {
                   }
                   className="btn-primary"
                 >
-                  {wizardStep === 2 ? "Creating..." : "Create Account"}
+                  {wizardStep === 2 ? "Provisioning..." : "Create Account"}
                 </button>
               </div>
             </form>

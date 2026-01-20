@@ -56,9 +56,12 @@ export class HostingController {
 
   @Post(':id/provision')
   @HttpCode(HttpStatus.OK)
-  async provision(@Param('id') id: string) {
-    const service = await this.hosting.provision(id);
-    return service;
+  async provision(@Param('id') id: string, @Body() body?: any) {
+    const returnCredentials = body?.returnCredentials === true;
+    if (returnCredentials) {
+      return this.hosting.provisionWithCredentials(id);
+    }
+    return this.hosting.provision(id);
   }
 
   @Post(':id/suspend')
