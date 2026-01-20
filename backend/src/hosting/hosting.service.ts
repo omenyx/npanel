@@ -573,7 +573,11 @@ export class HostingService implements OnModuleInit {
     return { token, service: saved };
   }
 
-  async terminateConfirm(id: string, token: string): Promise<HostingServiceEntity> {
+  async terminateConfirm(
+    id: string,
+    token: string,
+    opts?: { purge?: boolean },
+  ): Promise<HostingServiceEntity> {
     const service = await this.get(id);
     if (service.status !== 'termination_pending') {
       throw new BadRequestException('Termination is not pending');
@@ -587,16 +591,30 @@ export class HostingService implements OnModuleInit {
     if (service.terminationTokenExpiresAt.getTime() < Date.now()) {
       throw new BadRequestException('Termination token expired');
     }
+    const purge = opts?.purge === true;
     const context = this.buildAdapterContext(service);
     const username = this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
     const phpPoolName = username;
     const mysqlUsername = `${username}_db`;
+    const mailboxesToDelete = new Set<string>([
+      `postmaster@${service.primaryDomain}`,
+    ]);
+    if (purge) {
+      const mailboxes = await this.mailAdapter.listMailboxes(context, service.primaryDomain);
+      for (const address of mailboxes) {
+        if (typeof address === 'string' && address.includes('@')) {
+          mailboxesToDelete.add(address);
+        }
+      }
+    }
+    for (const address of mailboxesToDelete) {
+      await this.mailAdapter.ensureMailboxAbsent(context, address);
+    }
     await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
     await this.phpFpmAdapter.ensurePoolAbsent(context, phpPoolName);
     await this.mysqlAdapter.ensureAccountAbsent(context, mysqlUsername);
     await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
-    await this.mailAdapter.ensureMailboxAbsent(context, `postmaster@${service.primaryDomain}`);
     await this.ftpAdapter.ensureAccountAbsent(context, username);
     await this.userAdapter.ensureAbsent(context, username);
     await context.log({
@@ -612,7 +630,12 @@ export class HostingService implements OnModuleInit {
     service.status = 'terminated';
     service.terminationToken = null;
     service.terminationTokenExpiresAt = null;
-    return this.services.save(service);
+    const saved = await this.services.save(service);
+    if (purge) {
+      await this.logs.delete({ serviceId: service.id } as any);
+      await this.services.delete({ id: service.id } as any);
+    }
+    return saved;
   }
 
   async terminateCancel(id: string): Promise<HostingServiceEntity> {

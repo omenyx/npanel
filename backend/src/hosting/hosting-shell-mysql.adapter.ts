@@ -61,6 +61,10 @@ function assertSafeIdentifier(value: string): string {
   return value;
 }
 
+function escapeSqlIdentifier(value: string): string {
+  return `\`${String(value).replace(/`/g, '``')}\``;
+}
+
 function buildUserIdentifier(username: string): string {
   const safe = assertSafeIdentifier(username);
   return `'${safe}'@'%'`;
@@ -212,6 +216,15 @@ export class ShellMysqlAdapter implements MysqlAdapter {
     const userIdent = buildUserIdentifier(username);
     if (!context.dryRun) {
       try {
+        const databases = await this.listDatabases(context, username).catch(() => []);
+        for (const dbName of databases) {
+          await execMysql(
+            this.tools,
+            `DROP DATABASE IF EXISTS ${escapeSqlIdentifier(dbName)}`,
+          ).catch(
+            () => undefined,
+          );
+        }
         await execMysql(this.tools, `DROP USER IF EXISTS ${userIdent}`).catch(
           () => undefined,
         );

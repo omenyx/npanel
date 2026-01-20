@@ -248,14 +248,14 @@ export function AdminAccountsScreen() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ token: terminateToken }),
+          body: JSON.stringify({ token: terminateToken, purge: true }),
         },
       );
       setShowTerminateModal(false);
       setTerminateServiceId(null);
       setTerminateToken(null);
       setTerminateExpiresAt(null);
-      await refreshSingleService(payload.id || terminateServiceId);
+      setServices((prev) => prev.filter((s) => s.id !== terminateServiceId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Confirm termination failed");
     }
@@ -728,4 +728,3 @@ export function AdminAccountsScreen() {
     </div>
   );
 }
-

@@ -92,7 +92,8 @@ export class HostingController {
   @HttpCode(HttpStatus.OK)
   async terminateConfirm(@Param('id') id: string, @Body() body: any) {
     const token = typeof body?.token === 'string' ? body.token : '';
-    const service = await this.hosting.terminateConfirm(id, token);
+    const purge = body?.purge === true;
+    const service = await this.hosting.terminateConfirm(id, token, { purge });
     return service;
   }
 

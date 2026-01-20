@@ -7,8 +7,13 @@ import { HostingLog } from './hosting-log.entity';
 
 function repo<T extends object>() {
   const items: T[] = [] as T[];
+  const matches = (item: any, where: any) => {
+    if (!where) return false;
+    return Object.entries(where).every(([key, value]) => item?.[key] === value);
+  };
   const r = {
-    findOne: async (opts: any) => items.find((i: any) => i.id === opts.where.id || i['name'] === opts.where.name) || null,
+    findOne: async (opts: any) =>
+      items.find((i: any) => matches(i, opts?.where)) || null,
     save: async (e: any) => {
       const idx = items.findIndex((i: any) => i['id'] === e.id);
       if (idx >= 0) items[idx] = e;
@@ -18,8 +23,11 @@ function repo<T extends object>() {
     create: (e: any) => e,
     count: async (opts: any) => items.filter((i: any) => i['planName'] === opts.where.planName).length,
     delete: async (opts: any) => {
-      const idx = items.findIndex((i: any) => (i as any).name === opts.name);
-      if (idx >= 0) items.splice(idx, 1);
+      for (let idx = items.length - 1; idx >= 0; idx -= 1) {
+        if (matches(items[idx] as any, opts)) {
+          items.splice(idx, 1);
+        }
+      }
     },
     find: async () => items,
   } as unknown as Repository<T>;
@@ -41,6 +49,8 @@ function adapter() {
     ensureSuspended: async () => {},
     ensureResumed: async () => {},
     ensureAbsent: async () => {},
+    listMailboxes: async () => [],
+    listDatabases: async () => [],
   };
 }
 
@@ -91,6 +101,39 @@ describe('HostingService termination two-phase', () => {
     const saved = await service.terminateCancel('svc1');
     expect(saved.status).toBe('active');
     expect(saved.terminationToken).toBeNull();
+  });
+
+  it('confirm purge removes service record', async () => {
+    const web = adapter();
+    const php = adapter();
+    const mysql = { ...adapter(), listDatabases: async () => ['u_example_db_app'] };
+    const dns = adapter();
+    const mail = {
+      ...adapter(),
+      listMailboxes: async () => ['postmaster@example.com', 'a@example.com'],
+      ensureMailboxAbsent: async () => {},
+    };
+    const ftp = adapter();
+    const user = adapter();
+    service = new HostingService(
+      servicesRepo.r as any,
+      plansRepo.r as any,
+      user as any,
+      web as any,
+      php as any,
+      mysql as any,
+      dns as any,
+      mail as any,
+      ftp as any,
+      logsRepo.r as any,
+      { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
+      {} as any,
+      {} as any,
+    );
+    const prepared = await service.terminatePrepare('svc1');
+    const confirmed = await service.terminateConfirm('svc1', prepared.token, { purge: true });
+    expect(confirmed.status).toBe('terminated');
+    expect((servicesRepo.items as any[]).length).toBe(0);
   });
 });
 
