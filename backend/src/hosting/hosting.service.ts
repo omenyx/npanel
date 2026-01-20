@@ -190,10 +190,6 @@ export class HostingService implements OnModuleInit {
       errorMessage: null,
     });
     if (input.autoProvision === true) {
-      const readiness = await this.checkToolReadinessForProvision();
-      if (readiness.missing.length > 0) {
-        throw new BadRequestException(`Auto-provision blocked; missing tools: ${readiness.missing.join(', ')}`);
-      }
       const provisioned = await this.provisionWithCredentials(saved.id, meta);
       return provisioned;
     }
@@ -320,13 +316,6 @@ export class HostingService implements OnModuleInit {
       return { service };
     }
 
-    const readiness = await this.checkToolReadinessForProvision();
-    if (readiness.missing.length > 0) {
-      throw new BadRequestException(
-        `Provision blocked; missing tools: ${readiness.missing.join(', ')}`,
-      );
-    }
-
     const planName = service.planName ?? 'basic';
     const plan = await this.plans.findOne({ where: { name: planName } });
     if (!plan) {
@@ -334,14 +323,21 @@ export class HostingService implements OnModuleInit {
         `Hosting plan '${planName}' not found for service ${service.id}`,
       );
     }
-    if (plan.maxMailboxes === 0) {
+    const mailEnabled =
+      Number(plan.maxMailboxes ?? 0) > 0 &&
+      typeof process.env.NPANEL_MAIL_CMD === 'string' &&
+      process.env.NPANEL_MAIL_CMD.length > 0;
+    const ftpEnabled =
+      Number(plan.maxFtpAccounts ?? 0) > 0 &&
+      typeof process.env.NPANEL_FTP_CMD === 'string' &&
+      process.env.NPANEL_FTP_CMD.length > 0;
+    const readiness = await this.checkToolReadinessForProvision({
+      requireMail: mailEnabled,
+      requireFtp: ftpEnabled,
+    });
+    if (readiness.missing.length > 0) {
       throw new BadRequestException(
-        `Plan '${plan.name}' does not allow mailboxes (limit: ${plan.maxMailboxes})`,
-      );
-    }
-    if (plan.maxFtpAccounts === 0) {
-      throw new BadRequestException(
-        `Plan '${plan.name}' does not allow FTP accounts (limit: ${plan.maxFtpAccounts})`,
+        `Provision blocked; missing tools: ${readiness.missing.join(', ')}`,
       );
     }
     if (plan.diskQuotaMb < 0) {
@@ -362,8 +358,10 @@ export class HostingService implements OnModuleInit {
     const phpPoolName = username;
     const mysqlUsername = `${username}_db`;
     const mysqlPassword = this.credentials.generateDatabasePassword();
-    const mailboxPassword = this.credentials.generateMailboxPassword();
-    const ftpPassword = this.credentials.generateFtpPassword();
+    const mailboxPassword = mailEnabled
+      ? this.credentials.generateMailboxPassword()
+      : '';
+    const ftpPassword = ftpEnabled ? this.credentials.generateFtpPassword() : '';
     const traceId = context.traceId ?? null;
 
     const rollbackFns: Array<() => Promise<void>> = [];
@@ -484,15 +482,28 @@ export class HostingService implements OnModuleInit {
         targetKey: `postmaster@${service.primaryDomain}`,
         success: true,
         dryRun: context.dryRun,
-        details: { phase: 'start', step: 'mailbox', traceId },
+        details: { phase: 'start', step: 'mailbox', traceId, enabled: mailEnabled },
         errorMessage: null,
       });
-      const mailResult = await this.mailAdapter.ensureMailboxPresent(context, {
-        address: `postmaster@${service.primaryDomain}`,
-        password: mailboxPassword,
-        quotaMb: plan.mailboxQuotaMb,
-      });
-      registerRollback(mailResult.rollback);
+      if (mailEnabled) {
+        const mailResult = await this.mailAdapter.ensureMailboxPresent(context, {
+          address: `postmaster@${service.primaryDomain}`,
+          password: mailboxPassword,
+          quotaMb: plan.mailboxQuotaMb,
+        });
+        registerRollback(mailResult.rollback);
+      } else if (Number(plan.maxMailboxes ?? 0) > 0) {
+        await context.log({
+          adapter: 'hosting',
+          operation: 'update',
+          targetKind: 'mailbox',
+          targetKey: `postmaster@${service.primaryDomain}`,
+          success: true,
+          dryRun: context.dryRun,
+          details: { action: 'skipped', reason: 'mail_cmd_not_configured', traceId },
+          errorMessage: null,
+        });
+      }
 
       await context.log({
         adapter: 'hosting',
@@ -501,15 +512,28 @@ export class HostingService implements OnModuleInit {
         targetKey: username,
         success: true,
         dryRun: context.dryRun,
-        details: { phase: 'start', step: 'ftp_account', traceId },
+        details: { phase: 'start', step: 'ftp_account', traceId, enabled: ftpEnabled },
         errorMessage: null,
       });
-      const ftpResult = await this.ftpAdapter.ensureAccountPresent(context, {
-        username,
-        password: ftpPassword,
-        homeDirectory,
-      });
-      registerRollback(ftpResult.rollback);
+      if (ftpEnabled) {
+        const ftpResult = await this.ftpAdapter.ensureAccountPresent(context, {
+          username,
+          password: ftpPassword,
+          homeDirectory,
+        });
+        registerRollback(ftpResult.rollback);
+      } else if (Number(plan.maxFtpAccounts ?? 0) > 0) {
+        await context.log({
+          adapter: 'hosting',
+          operation: 'update',
+          targetKind: 'ftp_account',
+          targetKey: username,
+          success: true,
+          dryRun: context.dryRun,
+          details: { action: 'skipped', reason: 'ftp_cmd_not_configured', traceId },
+          errorMessage: null,
+        });
+      }
 
       service.status = 'active';
       const saved = await this.services.save(service);
@@ -592,30 +616,52 @@ export class HostingService implements OnModuleInit {
     meta?: ActionMeta,
   ): Promise<{ service: HostingServiceEntity; mailboxPassword: string; ftpPassword: string }> {
     const service = await this.get(id);
-    const readiness = await this.checkToolReadinessForProvision();
-    const missingMail = readiness.missing.includes('mail_cmd');
-    const missingFtp = readiness.missing.includes('ftp_cmd');
-    if (missingMail || missingFtp) {
+    const planName = service.planName ?? 'basic';
+    const plan = await this.plans.findOne({ where: { name: planName } });
+    if (!plan) {
       throw new BadRequestException(
-        `Cannot set credentials; missing tools: ${[missingMail ? 'mail_cmd' : null, missingFtp ? 'ftp_cmd' : null]
-          .filter(Boolean)
-          .join(', ')}`,
+        `Hosting plan '${planName}' not found for service ${service.id}`,
+      );
+    }
+    const mailEnabled =
+      Number(plan.maxMailboxes ?? 0) > 0 &&
+      typeof process.env.NPANEL_MAIL_CMD === 'string' &&
+      process.env.NPANEL_MAIL_CMD.length > 0;
+    const ftpEnabled =
+      Number(plan.maxFtpAccounts ?? 0) > 0 &&
+      typeof process.env.NPANEL_FTP_CMD === 'string' &&
+      process.env.NPANEL_FTP_CMD.length > 0;
+    const readiness = await this.checkToolReadinessForProvision({
+      requireMail: mailEnabled,
+      requireFtp: ftpEnabled,
+    });
+    if (readiness.missing.length > 0) {
+      throw new BadRequestException(
+        `Cannot set credentials; missing tools: ${readiness.missing.join(', ')}`,
       );
     }
     const context = this.buildAdapterContext(service);
     const username = this.deriveSystemUsername(service);
-    const mailboxPassword = input.mailboxPassword || this.credentials.generateMailboxPassword();
-    const ftpPassword = input.ftpPassword || this.credentials.generateFtpPassword();
-    await this.mailAdapter.ensureMailboxPresent(context, {
-      address: `postmaster@${service.primaryDomain}`,
-      password: mailboxPassword,
-      quotaMb: null,
-    });
-    await this.ftpAdapter.ensureAccountPresent(context, {
-      username,
-      password: ftpPassword,
-      homeDirectory: `/home/${username}`,
-    });
+    const mailboxPassword = mailEnabled
+      ? input.mailboxPassword || this.credentials.generateMailboxPassword()
+      : '';
+    const ftpPassword = ftpEnabled
+      ? input.ftpPassword || this.credentials.generateFtpPassword()
+      : '';
+    if (mailEnabled) {
+      await this.mailAdapter.ensureMailboxPresent(context, {
+        address: `postmaster@${service.primaryDomain}`,
+        password: mailboxPassword,
+        quotaMb: null,
+      });
+    }
+    if (ftpEnabled) {
+      await this.ftpAdapter.ensureAccountPresent(context, {
+        username,
+        password: ftpPassword,
+        homeDirectory: `/home/${username}`,
+      });
+    }
     await context.log({
       adapter: 'hosting',
       operation: 'update',
@@ -625,6 +671,8 @@ export class HostingService implements OnModuleInit {
       dryRun: context.dryRun,
       details: {
         action: 'init_credentials',
+        mailApplied: mailEnabled,
+        ftpApplied: ftpEnabled,
         actorId: meta?.actorId ?? null,
         actorRole: meta?.actorRole ?? null,
         actorType: meta?.actorType ?? null,
@@ -1144,7 +1192,10 @@ export class HostingService implements OnModuleInit {
     };
   }
 
-  private async checkToolReadinessForProvision(): Promise<{
+  private async checkToolReadinessForProvision(opts?: {
+    requireMail?: boolean;
+    requireFtp?: boolean;
+  }): Promise<{
     missing: string[];
     quotaStatus?: {
       tools_present: boolean;
@@ -1161,17 +1212,21 @@ export class HostingService implements OnModuleInit {
         missing.push(name);
       }
     }
-    if (!process.env.NPANEL_MAIL_CMD) {
-      missing.push('mail_cmd');
-    } else {
-      const mailStatus = await this.tools.statusFor(process.env.NPANEL_MAIL_CMD);
-      if (!mailStatus.available) missing.push('mail_cmd');
+    if (opts?.requireMail) {
+      if (!process.env.NPANEL_MAIL_CMD) {
+        missing.push('mail_cmd');
+      } else {
+        const mailStatus = await this.tools.statusFor(process.env.NPANEL_MAIL_CMD);
+        if (!mailStatus.available) missing.push('mail_cmd');
+      }
     }
-    if (!process.env.NPANEL_FTP_CMD) {
-      missing.push('ftp_cmd');
-    } else {
-      const ftpStatus = await this.tools.statusFor(process.env.NPANEL_FTP_CMD);
-      if (!ftpStatus.available) missing.push('ftp_cmd');
+    if (opts?.requireFtp) {
+      if (!process.env.NPANEL_FTP_CMD) {
+        missing.push('ftp_cmd');
+      } else {
+        const ftpStatus = await this.tools.statusFor(process.env.NPANEL_FTP_CMD);
+        if (!ftpStatus.available) missing.push('ftp_cmd');
+      }
     }
 
     const quotaStatus = await this.verifyQuotaSupport();

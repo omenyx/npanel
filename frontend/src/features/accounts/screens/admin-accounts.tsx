@@ -134,12 +134,22 @@ export function AdminAccountsScreen() {
         }
         const toolList = normalizeToolStatusList(toolsData?.tools);
         if (toolList.length > 0) {
-          const critical = ["useradd", "nginx", "php-fpm", "mysql", "mail_cmd", "ftp_cmd"];
+          const critical = ["useradd", "nginx", "php-fpm", "mysql"];
           const missing = toolList
             .filter((t) => critical.includes(t.name) && !t.available)
             .map((t) => t.name);
           if (missing.length > 0) {
             setToolWarning(`Provisioning requires: ${missing.join(", ")} to be available.`);
+          } else {
+            const optional = ["mail_cmd", "ftp_cmd"];
+            const optionalMissing = toolList
+              .filter((t) => optional.includes(t.name) && !t.available)
+              .map((t) => t.name);
+            if (optionalMissing.length > 0) {
+              setToolWarning(
+                `Optional integrations not configured: ${optionalMissing.join(", ")}. Mail/FTP provisioning depends on your plan limits.`,
+              );
+            }
           }
         }
       } catch {

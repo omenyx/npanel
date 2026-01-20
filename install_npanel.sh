@@ -182,24 +182,24 @@ install_dependencies() {
       fi
       ensure_nodesource_20
       pkg_install lsof git rsync openssh-client build-essential
-      pkg_install nginx mysql-server exim4 dovecot-core dovecot-imapd bind9
+      pkg_install nginx mysql-server exim4 dovecot-core dovecot-imapd bind9 pure-ftpd || true
       pkg_install php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd || true
       pkg_install pdns-server pdns-backend-mysql || true
       ;;
     dnf|yum)
       pkg_install curl ca-certificates git rsync openssh-clients lsof
-      pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot || true
+      pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot pure-ftpd || true
       pkg_install bind-utils bind || true
       ensure_nodesource_20
       ;;
     pacman)
       pkg_install curl ca-certificates git rsync openssh lsof base-devel
-      pkg_install nginx mariadb php php-fpm php-gd php-intl php-mbstring php-xml php-zip dovecot exim || true
+      pkg_install nginx mariadb php php-fpm php-gd php-intl php-mbstring php-xml php-zip dovecot exim pure-ftpd || true
       ensure_nodesource_20
       ;;
     zypper)
       pkg_install curl ca-certificates git rsync openssh lsof
-      pkg_install nginx mariadb mariadb-tools php-fpm php8-mysql php8-mbstring php8-xmlreader php8-intl php8-zip php8-gd exim dovecot || true
+      pkg_install nginx mariadb mariadb-tools php-fpm php8-mysql php8-mbstring php8-xmlreader php8-intl php8-zip php8-gd exim dovecot pure-ftpd || true
       ensure_nodesource_20
       ;;
     *)
@@ -228,6 +228,8 @@ ensure_services_start() {
   svc start exim4
   svc start exim
   svc start dovecot
+  svc start pure-ftpd
+  svc start pure-ftpd-mysql
   if check_cmd pdns_server || [[ -x /usr/sbin/pdns_server ]]; then
     svc stop bind9
     svc stop named
