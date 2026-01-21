@@ -1130,6 +1130,10 @@ write_env() {
   if [[ -f "$dest" ]]; then
     return
   fi
+  
+  # Ensure data directory exists for SQLite database
+  mkdir -p "$NPANEL_DIR/data"
+  
   resolve_tool_cmds
   local jwt; jwt="$(generate_jwt_secret)"
   local root_pass; root_pass="$(openssl rand -hex 16)" # 32-char random hex string
@@ -1140,6 +1144,7 @@ write_env() {
 NODE_ENV=production
 PORT=3000
 JWT_SECRET=$jwt
+DATABASE_PATH=$NPANEL_DIR/data/npanel.sqlite
 NPANEL_ROOT_PASSWORD=$root_pass
 NPANEL_HOSTING_DRY_RUN=0
 NPANEL_FIXED_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

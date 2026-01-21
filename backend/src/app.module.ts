@@ -12,9 +12,10 @@ import { GovernanceModule } from './governance/governance.module';
   imports: [
     TypeOrmModule.forRoot({
       type: 'sqlite',
-      database: 'npanel.sqlite',
+      database: process.env.DATABASE_PATH || './npanel.sqlite',
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: true,
+      logging: process.env.LOG_LEVEL === 'debug',
     }),
     IamModule,
     HealthModule,
