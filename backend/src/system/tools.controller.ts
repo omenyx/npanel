@@ -15,7 +15,7 @@ import type { Request } from 'express';
 import { ToolResolver } from './tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
 import * as os from 'os';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { stat } from 'fs/promises';
 import { JwtAuthGuard } from '../iam/jwt-auth.guard';
@@ -24,7 +24,6 @@ import { Roles } from '../iam/roles.decorator';
 import { GovernanceService } from '../governance/governance.service';
 import type { ActionStep } from '../governance/governance.service';
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 function parseAllowedServicesFromEnv(value: string | undefined): string[] {
@@ -116,7 +115,7 @@ export class ToolsController {
     let disk = { total: 0, used: 0, free: 0, percent: 0 };
     try {
       // Get disk usage for root partition
-      const { stdout } = await execAsync('df -B1 /');
+      const { stdout } = await execFileAsync('df', ['-B1', '/']);
       const lines = stdout.trim().split('\n');
       if (lines.length >= 2) {
         const parts = lines[1].split(/\s+/);
@@ -356,6 +355,10 @@ export class ToolsController {
   async getLogContent(@Query('path') path: string) {
     if (!path || !path.startsWith('/var/log/') || path.includes('..')) {
       throw new BadRequestException('Invalid log path');
+    }
+    // Additional validation: only allow safe filenames (no symlink escape)
+    if (!path.match(/^\/var\/log\/[a-zA-Z0-9._\/-]+$/)) {
+      throw new BadRequestException('Invalid log filename characters');
     }
     try {
       // Use tail to get last 200 lines

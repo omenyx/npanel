@@ -8,14 +8,14 @@ import { ToolResolver } from './tool-resolver';
 import { JwtAuthGuard } from '../iam/jwt-auth.guard';
 import { RolesGuard } from '../iam/roles.guard';
 import { Roles } from '../iam/roles.decorator';
-import { readFile, access, mkdir } from 'fs/promises';
+import { readFile, access, mkdir, writeFile } from 'fs/promises';
 import { constants } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 @Controller('system/tools')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -92,15 +92,25 @@ export class SystemController {
         try {
           await access(privateKeyPath, constants.F_OK);
           // Private exists but public missing? unexpected but handleable by regenerating public
-          await execAsync(
-            `ssh-keygen -y -f "${privateKeyPath}" > "${publicKeyPath}"`,
+          // Use execFileAsync with array args (safe, no shell) and manually write file
+          const { stdout: publicKeyContent } = await execFileAsync(
+            'ssh-keygen',
+            ['-y', '-f', privateKeyPath],
           );
+          await writeFile(publicKeyPath, publicKeyContent, { mode: 0o600 });
         } catch {
           // Neither exists, generate new pair
           // -t rsa -b 4096 -N "" (no passphrase) -f path
-          await execAsync(
-            `ssh-keygen -t rsa -b 4096 -N "" -f "${privateKeyPath}"`,
-          );
+          await execFileAsync('ssh-keygen', [
+            '-t',
+            'rsa',
+            '-b',
+            '4096',
+            '-N',
+            '',
+            '-f',
+            privateKeyPath,
+          ]);
         }
       }
 
