@@ -298,85 +298,212 @@ install_dependencies() {
   esac
 }
 
+# Track failed services
+FAILED_SERVICES=()
+
 svc() {
   local action="$1"
   local name="$2"
+  local retval=0
   if check_cmd systemctl; then
-    systemctl "$action" "$name" 2>/dev/null || true
+    if ! systemctl "$action" "$name" 2>/dev/null; then
+      retval=1
+    fi
   else
-    service "$name" "$action" 2>/dev/null || true
+    if ! service "$name" "$action" 2>/dev/null; then
+      retval=1
+    fi
   fi
+  
+  if [[ $retval -ne 0 && "$action" == "start" ]]; then
+    FAILED_SERVICES+=("$name")
+  fi
+  return $retval
+}
+
+port_listening() {
+  local port="$1"
+  if check_cmd netstat; then
+    netstat -tln 2>/dev/null | grep -q ":$port " && return 0
+  fi
+  if check_cmd ss; then
+    ss -tln 2>/dev/null | grep -q ":$port " && return 0
+  fi
+  if check_cmd lsof; then
+    lsof -i ":$port" >/dev/null 2>&1 && return 0
+  fi
+  return 1
 }
 
 ensure_services_start() {
   log "Starting services for $OS_ID ($PKG_MGR)..."
+  FAILED_SERVICES=()
   
   # Database services
-  svc start mysql
-  svc start mariadb
+  log "Starting database services..."
+  if svc start mysql; then
+    log "✓ MySQL started"
+  else
+    log "✗ MySQL failed to start (may be normal if using MariaDB)"
+  fi
+  if svc start mariadb; then
+    log "✓ MariaDB started"
+  else
+    log "✗ MariaDB failed to start"
+  fi
   
   # Web server
-  svc start nginx
+  log "Starting nginx web server..."
+  if svc start nginx; then
+    log "✓ Nginx started"
+  else
+    err "✗ Nginx failed to start - checking config"
+    if check_cmd nginx; then
+      nginx -t 2>&1 | grep -i "error" && err "Nginx config error detected"
+    fi
+  fi
   
   # PHP-FPM with different version names across distros
+  log "Starting PHP-FPM services..."
   case "$PKG_MGR" in
     dnf|yum)
-      # RHEL-based systems use php-fpm
-      svc start php-fpm
-      svc start php8.2-fpm
-      svc start php8.1-fpm
-      svc start php8.0-fpm
+      svc start php-fpm && log "✓ PHP-FPM started"
+      svc start php8.2-fpm || true
+      svc start php8.1-fpm || true
+      svc start php8.0-fpm || true
       ;;
     apt)
-      # Debian/Ubuntu use versioned php-fpm services
-      svc start php-fpm
-      svc start php8.2-fpm
-      svc start php8.1-fpm
-      svc start php8.0-fpm
+      svc start php-fpm && log "✓ PHP-FPM started"
+      svc start php8.2-fpm || true
+      svc start php8.1-fpm || true
+      svc start php8.0-fpm || true
       ;;
     pacman)
-      # Arch uses php-fpm
-      svc start php-fpm
+      svc start php-fpm && log "✓ PHP-FPM started" || log "Note: PHP-FPM not available"
       ;;
     zypper)
-      # SUSE uses php-fpm
-      svc start php-fpm
+      svc start php-fpm && log "✓ PHP-FPM started" || log "Note: PHP-FPM not available"
       ;;
   esac
   
-  # Mail services - different service names per distro
+  # Mail services
+  log "Starting mail services (Exim)..."
   case "$PKG_MGR" in
     apt)
-      # Debian/Ubuntu uses exim4
-      log "Starting Exim4 mail server..."
-      svc start exim4 || log "Note: Exim4 not started"
+      if svc start exim4; then
+        log "✓ Exim4 started"
+      else
+        log "✗ Exim4 failed to start"
+      fi
       ;;
     dnf|yum|pacman|zypper)
-      # RHEL, Arch, SUSE use exim
-      log "Starting Exim mail server..."
-      svc start exim || log "Note: Exim not started"
+      if svc start exim; then
+        log "✓ Exim started"
+      else
+        log "✗ Exim failed to start"
+      fi
       ;;
   esac
   
   # IMAP services
   log "Starting Dovecot IMAP server..."
-  svc start dovecot || log "Note: Dovecot not started"
+  if svc start dovecot; then
+    log "✓ Dovecot started"
+  else
+    log "✗ Dovecot failed to start"
+  fi
   
   # FTP services
   log "Starting FTP services..."
-  svc start pure-ftpd
-  svc start pure-ftpd-mysql
+  if svc start pure-ftpd; then
+    log "✓ Pure-FTPd started"
+  else
+    log "✗ Pure-FTPd failed to start"
+  fi
+  svc start pure-ftpd-mysql || true
   
   # DNS services
   log "Starting DNS services..."
   if check_cmd pdns_server || [[ -x /usr/sbin/pdns_server ]]; then
-    svc stop bind9
-    svc stop named
-    svc start pdns
+    svc stop bind9 2>/dev/null || true
+    svc stop named 2>/dev/null || true
+    if svc start pdns; then
+      log "✓ PowerDNS started"
+    else
+      log "✗ PowerDNS failed to start"
+    fi
   else
-    svc start named
-    svc start bind9
+    if svc start named; then
+      log "✓ BIND (named) started"
+    elif svc start bind9; then
+      log "✓ BIND9 started"
+    else
+      log "✗ DNS services (BIND/named) failed to start"
+    fi
   fi
+}
+
+verify_all_services() {
+  log "Verifying all services are running..."
+  local services_ok=1
+  
+  # Check nginx
+  if port_listening 8080; then
+    log "✓ Nginx listening on port 8080"
+  else
+    err "✗ Nginx NOT listening on port 8080"
+    services_ok=0
+  fi
+  
+  # Check backend
+  if port_listening 3000; then
+    log "✓ Backend listening on port 3000"
+  else
+    err "✗ Backend NOT listening on port 3000"
+    services_ok=0
+  fi
+  
+  # Check frontend
+  if port_listening 3001; then
+    log "✓ Frontend listening on port 3001"
+  else
+    err "✗ Frontend NOT listening on port 3001"
+    services_ok=0
+  fi
+  
+  # Check MySQL/MariaDB
+  if port_listening 3306; then
+    log "✓ MySQL/MariaDB listening on port 3306"
+  else
+    log "Note: MySQL/MariaDB not listening (may be offline)"
+  fi
+  
+  # Check DNS
+  if port_listening 53; then
+    log "✓ DNS service listening on port 53"
+  else
+    log "Note: DNS service not listening (may be offline)"
+  fi
+  
+  if [[ ${#FAILED_SERVICES[@]} -gt 0 ]]; then
+    err ""
+    err "============ SERVICE STARTUP SUMMARY ============"
+    err "Failed to start or not available: ${FAILED_SERVICES[*]}"
+    err "================================================"
+    err ""
+  fi
+  
+  if [[ $services_ok -eq 0 ]]; then
+    err "Critical services are not running. Troubleshooting:"
+    err "  1. Check systemctl status: systemctl status npanel-backend npanel-frontend"
+    err "  2. Check logs: journalctl -u npanel-backend -n 50"
+    err "  3. Check nginx config: nginx -t"
+    err "  4. Manually start services: systemctl restart nginx npanel-backend npanel-frontend"
+    return 1
+  fi
+  
+  log "✓ All critical services verified and running!"
+  return 0
 }
 
 mysql_exec() {
@@ -1236,6 +1363,11 @@ verify_deployment() {
     log "Skipping deployment verification due to --no-restart"
     return
   fi
+  
+  # Verify all services are listening first
+  sleep 2
+  verify_all_services || true
+  
   # Use public health endpoint for backend readiness (no auth required)
   until curl -fsS http://127.0.0.1:3000/v1/health >/dev/null 2>&1; do
     retries=$((retries+1))
