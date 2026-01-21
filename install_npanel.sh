@@ -1939,7 +1939,15 @@ NGCONF
   setup_ssl_certificates
   
   nginx -t || die "Nginx configuration syntax error!"
-  svc restart nginx
+  
+  # Restart nginx using the most reliable method available
+  if check_cmd systemctl; then
+    systemctl restart nginx || die "Failed to restart nginx service"
+  elif check_cmd service; then
+    service nginx restart || die "Failed to restart nginx service"
+  else
+    die "No service management tool available"
+  fi
   
   # Validate nginx routing configuration using comprehensive validator
   log "Validating nginx routing configuration..."
