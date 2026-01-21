@@ -1015,8 +1015,45 @@ EOF
   svc restart pdns
 }
 
+check_local_changes() {
+  local dest="$1"
+  
+  # Check for uncommitted changes
+  if [[ ! -d "$dest/.git" ]]; then
+    return
+  fi
+  
+  cd "$dest" || return
+  
+  # Git status checks
+  local unstaged=$(git status --short 2>/dev/null | grep -v "^??" | wc -l)
+  local untracked=$(git status --short 2>/dev/null | grep "^??" | wc -l)
+  
+  if [[ $unstaged -gt 0 ]]; then
+    warn "⚠️  WARNING: Uncommitted changes detected in $dest"
+    warn ""
+    warn "Modified files (would be lost on update):"
+    git status --short 2>/dev/null | grep -v "^??" | sed 's/^/  /'
+    warn ""
+    
+    if [[ -z "$FORCE_UPDATE" ]]; then
+      warn "To proceed anyway, run with: FORCE_UPDATE=1 $0"
+      die "Cannot update with uncommitted changes. Stash or commit changes first."
+    else
+      warn "FORCE_UPDATE=1 detected - proceeding anyway (changes will be lost)"
+      warn "Stashing local changes..."
+      git stash push -m "auto-stash-$(date +%s)" || true
+    fi
+  fi
+}
+
 ensure_repo() {
   local dest="$NPANEL_DIR"
+  
+  # Check for local changes before updating
+  if [[ -d "$dest/.git" ]]; then
+    check_local_changes "$dest"
+  fi
 
   if [[ -d "$dest/.git" ]]; then
     git config --global --add safe.directory "$dest" || true
