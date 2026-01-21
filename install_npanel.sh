@@ -656,6 +656,119 @@ install_management_scripts() {
   if [[ -f "$src_mail" ]]; then
     install -m 0755 "$src_mail" /usr/local/bin/npanel-mail
   fi
+  
+  # Install npanel service management command
+  cat > /usr/local/bin/npanel-ctl <<'EOFCTL'
+#!/usr/bin/env bash
+# Npanel Service Control Script
+
+case "${1:-help}" in
+  start)
+    echo "[INFO] Starting Npanel services..."
+    systemctl start npanel-backend.service 2>/dev/null || echo "Warning: Could not start backend service"
+    systemctl start npanel-frontend.service 2>/dev/null || echo "Warning: Could not start frontend service"
+    sleep 2
+    echo "[INFO] Checking service status..."
+    systemctl status npanel-backend.service npanel-frontend.service 2>/dev/null || true
+    ;;
+  stop)
+    echo "[INFO] Stopping Npanel services..."
+    systemctl stop npanel-backend.service 2>/dev/null || echo "Warning: Could not stop backend service"
+    systemctl stop npanel-frontend.service 2>/dev/null || echo "Warning: Could not stop frontend service"
+    sleep 1
+    echo "[INFO] Services stopped"
+    ;;
+  restart)
+    echo "[INFO] Restarting Npanel services..."
+    systemctl restart npanel-backend.service 2>/dev/null || echo "Warning: Could not restart backend service"
+    systemctl restart npanel-frontend.service 2>/dev/null || echo "Warning: Could not restart frontend service"
+    sleep 2
+    echo "[INFO] Services restarted"
+    ;;
+  status)
+    echo "[INFO] Npanel Backend Status:"
+    systemctl status npanel-backend.service 2>/dev/null || echo "Backend service not running"
+    echo ""
+    echo "[INFO] Npanel Frontend Status:"
+    systemctl status npanel-frontend.service 2>/dev/null || echo "Frontend service not running"
+    ;;
+  logs)
+    echo "[INFO] Npanel Backend Logs:"
+    journalctl -u npanel-backend.service -n 50 --no-pager 2>/dev/null || tail -n 50 /var/log/npanel-backend.log 2>/dev/null || echo "No logs available"
+    echo ""
+    echo "[INFO] Npanel Frontend Logs:"
+    journalctl -u npanel-frontend.service -n 50 --no-pager 2>/dev/null || tail -n 50 /var/log/npanel-frontend.log 2>/dev/null || echo "No logs available"
+    ;;
+  backend-start)
+    echo "[INFO] Starting Npanel Backend..."
+    systemctl start npanel-backend.service
+    ;;
+  backend-stop)
+    echo "[INFO] Stopping Npanel Backend..."
+    systemctl stop npanel-backend.service
+    ;;
+  backend-restart)
+    echo "[INFO] Restarting Npanel Backend..."
+    systemctl restart npanel-backend.service
+    ;;
+  backend-status)
+    systemctl status npanel-backend.service
+    ;;
+  backend-logs)
+    journalctl -u npanel-backend.service -f --no-pager 2>/dev/null || tail -f /var/log/npanel-backend.log 2>/dev/null
+    ;;
+  frontend-start)
+    echo "[INFO] Starting Npanel Frontend..."
+    systemctl start npanel-frontend.service
+    ;;
+  frontend-stop)
+    echo "[INFO] Stopping Npanel Frontend..."
+    systemctl stop npanel-frontend.service
+    ;;
+  frontend-restart)
+    echo "[INFO] Restarting Npanel Frontend..."
+    systemctl restart npanel-frontend.service
+    ;;
+  frontend-status)
+    systemctl status npanel-frontend.service
+    ;;
+  frontend-logs)
+    journalctl -u npanel-frontend.service -f --no-pager 2>/dev/null || tail -f /var/log/npanel-frontend.log 2>/dev/null
+    ;;
+  *)
+    cat <<'EOFHELP'
+Npanel Service Control - Usage:
+
+  npanel-ctl start           Start both backend and frontend services
+  npanel-ctl stop            Stop both backend and frontend services
+  npanel-ctl restart         Restart both backend and frontend services
+  npanel-ctl status          Show status of both services
+  npanel-ctl logs            Show last 50 lines of logs from both services
+
+Backend Commands:
+  npanel-ctl backend-start   Start backend service
+  npanel-ctl backend-stop    Stop backend service
+  npanel-ctl backend-restart Restart backend service
+  npanel-ctl backend-status  Show backend status
+  npanel-ctl backend-logs    Follow backend logs (live)
+
+Frontend Commands:
+  npanel-ctl frontend-start   Start frontend service
+  npanel-ctl frontend-stop    Stop frontend service
+  npanel-ctl frontend-restart Restart frontend service
+  npanel-ctl frontend-status  Show frontend status
+  npanel-ctl frontend-logs    Follow frontend logs (live)
+
+Examples:
+  sudo npanel-ctl start
+  sudo npanel-ctl backend-logs
+  sudo npanel-ctl frontend-restart
+EOFHELP
+    ;;
+esac
+EOFCTL
+  chmod +x /usr/local/bin/npanel-ctl
+  log "Installed npanel-ctl command for service management"
 }
 
 configure_dovecot_npanel() {
