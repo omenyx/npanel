@@ -1068,7 +1068,12 @@ install_npanel_dependencies() {
   log "Installing frontend dependencies"
   pushd "$NPANEL_DIR/frontend" >/dev/null
   npm ci || npm install
-  npm run build
+  log "Building frontend for production..."
+  npm run build || die "Frontend build failed!"
+  if [[ ! -d ".next" ]]; then
+    die "Frontend build completed but .next directory not found!"
+  fi
+  log "Frontend build successful: .next directory verified"
   popd >/dev/null
 }
 
