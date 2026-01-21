@@ -723,7 +723,7 @@ export class MigrationService {
     const root =
       typeof rootValue === 'string' && rootValue.length > 0
         ? rootValue
-        : process.env.NPANEL_MIGRATION_TARGET_ROOT || '/srv/npanel/migrations';
+        : process.env.NPANEL_MIGRATION_TARGET_ROOT || '/opt/npanel/migrations';
     const trimmed = root.endsWith('/') ? root.slice(0, -1) : root;
     return `${trimmed}/${job.id}/${account.sourceUsername}`;
   }
