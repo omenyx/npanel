@@ -1195,6 +1195,20 @@ ensure_env_defaults() {
   else
     sed -i 's|^NPANEL_MAIL_CMD=$|NPANEL_MAIL_CMD=/usr/local/bin/npanel-mail|' "$dest" || true
   fi
+  
+  # Ensure frontend .env.local exists
+  local frontend_env="$NPANEL_DIR/frontend/.env.local"
+  if [[ ! -f "$frontend_env" ]]; then
+    cat > "$frontend_env" <<'EOFENV'
+# NPanel Frontend Runtime Configuration
+NEXT_PUBLIC_API_BASE_URL=/v1
+NEXT_PUBLIC_API_TIMEOUT=30000
+NEXT_PUBLIC_DEBUG=false
+NEXT_PUBLIC_APP_TITLE=NPanel - Hosting Control Panel
+NEXT_PUBLIC_THEME=light
+EOFENV
+    log "Added missing frontend .env.local"
+  fi
 }
 
 install_management_scripts() {
@@ -1602,6 +1616,31 @@ install_npanel_dependencies() {
   fi
   log "Backend build successful: dist/main.js verified"
   popd >/dev/null
+
+  # Create frontend .env.local if it doesn't exist
+  if [[ ! -f "$NPANEL_DIR/frontend/.env.local" ]]; then
+    log "Creating frontend .env.local configuration..."
+    cat > "$NPANEL_DIR/frontend/.env.local" <<'EOFENV'
+# NPanel Frontend Runtime Configuration
+# Auto-generated during installation
+
+# Backend API Base URL
+NEXT_PUBLIC_API_BASE_URL=/v1
+
+# API request timeout (30 seconds)
+NEXT_PUBLIC_API_TIMEOUT=30000
+
+# Debug mode
+NEXT_PUBLIC_DEBUG=false
+
+# App title
+NEXT_PUBLIC_APP_TITLE=NPanel - Hosting Control Panel
+
+# Theme
+NEXT_PUBLIC_THEME=light
+EOFENV
+    log "Frontend .env.local created successfully"
+  fi
 
   log "Installing frontend dependencies"
   pushd "$NPANEL_DIR/frontend" >/dev/null
