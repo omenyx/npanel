@@ -5,6 +5,7 @@ import { Activity, AlertTriangle, HardDrive, Server } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { Button } from "@/shared/ui/button";
 import { normalizeToolStatusList, type ToolStatusItem } from "@/shared/api/system-status";
+import { SetupWizard } from "@/features/setup/setup-wizard";
 
 type SystemStatusResponse = {
   tools: unknown;
@@ -41,6 +42,18 @@ export default function AdminDashboardPage() {
   const [status, setStatus] = React.useState<SystemStatusResponse | null>(null);
   const [services, setServices] = React.useState<HostingService[]>([]);
   const [logs, setLogs] = React.useState<HostingLog[]>([]);
+  const [showSetupWizard, setShowSetupWizard] = React.useState(false);
+
+  React.useEffect(() => {
+    // Check if setup wizard should be shown
+    const shouldShowWizard = localStorage.getItem("npanel_setup_complete") !== "true";
+    setShowSetupWizard(shouldShowWizard);
+  }, []);
+
+  const handleSetupComplete = () => {
+    localStorage.setItem("npanel_setup_complete", "true");
+    setShowSetupWizard(false);
+  };
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -76,6 +89,10 @@ export default function AdminDashboardPage() {
     () => toolList.filter((t) => t.available === false).slice(0, 6),
     [toolList],
   );
+
+  if (showSetupWizard) {
+    return <SetupWizard onComplete={handleSetupComplete} />;
+  }
 
   return (
     <div className="space-y-6">
