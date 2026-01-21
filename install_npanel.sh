@@ -1520,6 +1520,25 @@ configure_nginx() {
   fi
   mkdir -p "$(dirname "$conf")"
   cat > "$conf" <<'NGCONF'
+# Upstream backend
+upstream npanel_backend {
+    server 127.0.0.1:3000;
+}
+
+# Upstream frontend
+upstream npanel_frontend {
+    server 127.0.0.1:3001;
+}
+
+# Shared proxy configuration
+map $request_uri $admin_redirect {
+    ~*^/$ /admin;
+    default $request_uri;
+}
+
+# ============================================
+# Main Port 8080 (HTTP) - Mixed routing
+# ============================================
 server {
     listen 8080;
     server_name localhost;
@@ -1527,7 +1546,7 @@ server {
     # API endpoints - route to backend
     location /api {
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://npanel_backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1535,7 +1554,7 @@ server {
     }
 
     location /v1 {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://npanel_backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1544,7 +1563,7 @@ server {
 
     # Admin panel
     location /admin {
-        proxy_pass http://127.0.0.1:3001/admin;
+        proxy_pass http://npanel_frontend/admin;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1553,7 +1572,7 @@ server {
 
     # Customer panel
     location /customer {
-        proxy_pass http://127.0.0.1:3001/customer;
+        proxy_pass http://npanel_frontend/customer;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1562,7 +1581,7 @@ server {
 
     # Login page
     location /login {
-        proxy_pass http://127.0.0.1:3001/login;
+        proxy_pass http://npanel_frontend/login;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1576,7 +1595,181 @@ server {
 
     # Static files and other frontend routes
     location / {
-        proxy_pass http://127.0.0.1:3001;
+        proxy_pass http://npanel_frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ============================================
+# Port 2082 (HTTP) - Customer Only
+# ============================================
+server {
+    listen 2082;
+    server_name localhost;
+
+    # Redirect root to customer
+    location = / {
+        return 301 /customer;
+    }
+
+    # API endpoints - route to backend
+    location /api {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /v1 {
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Customer panel - everything goes here
+    location / {
+        proxy_pass http://npanel_frontend/customer;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ============================================
+# Port 2083 (HTTPS) - Customer Only
+# ============================================
+server {
+    listen 2083 ssl http2;
+    server_name localhost;
+
+    # SSL certificates (generate if needed)
+    ssl_certificate /etc/ssl/certs/npanel.crt;
+    ssl_certificate_key /etc/ssl/private/npanel.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Redirect root to customer
+    location = / {
+        return 301 /customer;
+    }
+
+    # API endpoints - route to backend
+    location /api {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /v1 {
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Customer panel - everything goes here
+    location / {
+        proxy_pass http://npanel_frontend/customer;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ============================================
+# Port 2086 (HTTP) - Admin Only
+# ============================================
+server {
+    listen 2086;
+    server_name localhost;
+
+    # Redirect root to admin
+    location = / {
+        return 301 /admin;
+    }
+
+    # API endpoints - route to backend
+    location /api {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /v1 {
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Admin panel - everything goes here
+    location / {
+        proxy_pass http://npanel_frontend/admin;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ============================================
+# Port 2087 (HTTPS) - Admin Only
+# ============================================
+server {
+    listen 2087 ssl http2;
+    server_name localhost;
+
+    # SSL certificates (generate if needed)
+    ssl_certificate /etc/ssl/certs/npanel.crt;
+    ssl_certificate_key /etc/ssl/private/npanel.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Redirect root to admin
+    location = / {
+        return 301 /admin;
+    }
+
+    # API endpoints - route to backend
+    location /api {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /v1 {
+        proxy_pass http://npanel_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Admin panel - everything goes here
+    location / {
+        proxy_pass http://npanel_frontend/admin;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
