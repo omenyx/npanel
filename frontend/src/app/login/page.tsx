@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LockKeyhole, PanelLeft } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { clearSession, getStoredRole } from "@/shared/auth/session";
+import { detectAccessMode, getAccessModeLabel, getProtocolBadge, isRoleAllowedOnCurrentPort, getDashboardPath } from "@/shared/auth/port-routing";
 
 type LoginResponse =
   | {
@@ -26,11 +27,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessMode, setAccessMode] = useState<"admin" | "customer" | "mixed">("mixed");
 
   useEffect(() => {
+    // Detect port to determine access mode
+    const mode = detectAccessMode();
+    setAccessMode(mode);
+
+    // If already logged in, redirect to appropriate dashboard
     const role = getStoredRole();
     if (role) {
-      router.replace(role === "CUSTOMER" ? "/customer" : "/admin");
+      const targetPath = getDashboardPath(role);
+      router.replace(targetPath);
     }
   }, [router]);
 
@@ -55,7 +63,19 @@ export default function LoginPage() {
       }
       window.localStorage.setItem("npanel_user_email", data.user.email);
       window.localStorage.setItem("npanel_user_role", data.user.role);
-      router.replace(data.user.role === "CUSTOMER" ? "/customer" : "/admin");
+      
+      // Enforce port-based access control
+      if (!isRoleAllowedOnCurrentPort(data.user.role)) {
+        const modeLabel = getAccessModeLabel();
+        setError(`This account does not have access to ${modeLabel}`);
+        window.localStorage.removeItem("npanel_user_email");
+        window.localStorage.removeItem("npanel_user_role");
+        setLoading(false);
+        return;
+      }
+      
+      const targetPath = getDashboardPath(data.user.role);
+      router.replace(targetPath);
     } catch {
       setError("Unable to reach backend API");
       setLoading(false);
@@ -76,6 +96,20 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
+        
+        {/* Port access mode indicator */}
+        {accessMode !== "mixed" && (
+          <div className="mb-4 rounded-lg border border-amber-800/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+            <span className="font-semibold">
+              {accessMode === "admin" ? "🔐 Admin Portal" : "👤 Customer Portal"}
+            </span>
+            <p className="mt-1 text-amber-300/80">
+              {accessMode === "admin" 
+                ? "This portal is reserved for administrators" 
+                : "This portal is reserved for customers"}
+            </p>
+          </div>
+        )}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="block text-sm font-medium text-zinc-200">
