@@ -211,20 +211,25 @@ install_dependencies() {
   pkg_update
   case "$PKG_MGR" in
     apt)
+      log "Installing dependencies for Debian/Ubuntu system"
       pkg_install curl ca-certificates lsb-release gnupg software-properties-common
       if [[ "$OS_ID" == "ubuntu" ]]; then
+        log "Adding Ondrej PHP PPA for Ubuntu"
         LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || true
         pkg_update
+      elif [[ "$OS_ID" == "debian" ]]; then
+        log "Using Debian default PHP packages"
       fi
       ensure_nodesource_20
       pkg_install lsof git rsync openssh-client build-essential openssl
+      # Debian/Ubuntu uses exim4 and specific package versions
       pkg_install nginx mysql-server exim4 dovecot-core dovecot-imapd bind9 pure-ftpd || true
       pkg_install php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd || true
       pkg_install pdns-server pdns-backend-mysql || true
       ;;
     dnf)
       # RHEL-based systems (AlmaLinux, Rocky, RHEL, CentOS Stream)
-      log "Installing core dependencies for RHEL-based system"
+      log "Installing dependencies for RHEL 9+ system ($OS_ID)"
       pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc g++ make
       # Enable PowerTools/CRB repository for EPEL dependencies
       if [[ "$OS_ID" == "almalinux" ]] || [[ "$OS_ID" == "rocky" ]] || [[ "$OS_ID" == "rhel" ]]; then
@@ -241,6 +246,7 @@ install_dependencies() {
       pkg_install mariadb-server mariadb || log "Warning: mariadb installation failed"
       pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
       # Install mail services separately for better error handling
+      # RHEL systems use 'exim' not 'exim4'
       log "Installing Exim mail server"
       pkg_install exim || log "Warning: Exim installation failed"
       log "Installing Dovecot IMAP services"
@@ -257,20 +263,28 @@ install_dependencies() {
       ensure_nodesource_20
       ;;
     yum)
-      # Older yum-based systems
+      # Older yum-based systems (CentOS 7, RHEL 7, etc.)
+      log "Installing dependencies for older RHEL system ($OS_ID)"
       pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc gcc-c++
-      pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot || true
-      pkg_install bind-utils bind || true
-      pkg_install pure-ftpd || true
+      # Older systems may have different package names
+      pkg_install nginx mariadb-server || log "Warning: nginx/mariadb installation failed"
+      pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
+      pkg_install exim dovecot || log "Warning: Mail services installation failed"
+      pkg_install bind-utils bind || log "Warning: BIND installation failed"
+      pkg_install pure-ftpd || log "Warning: pure-ftpd installation failed"
       ensure_nodesource_20
       ;;
     pacman)
+      log "Installing dependencies for Arch Linux system"
       pkg_install curl ca-certificates git rsync openssh lsof base-devel openssl
+      # Arch uses different package names
       pkg_install nginx mariadb php php-fpm php-gd php-intl php-mbstring php-xml php-zip dovecot exim pure-ftpd || true
       ensure_nodesource_20
       ;;
     zypper)
+      log "Installing dependencies for SUSE/openSUSE system"
       pkg_install curl ca-certificates git rsync openssh lsof openssl
+      # SUSE uses php8 prefix for versioned packages
       pkg_install nginx mariadb mariadb-tools php-fpm php8-mysql php8-mbstring php8-xmlreader php8-intl php8-zip php8-gd exim dovecot pure-ftpd || true
       ensure_nodesource_20
       ;;
@@ -291,7 +305,7 @@ svc() {
 }
 
 ensure_services_start() {
-  log "Starting services..."
+  log "Starting services for $OS_ID ($PKG_MGR)..."
   
   # Database services
   svc start mysql
@@ -300,15 +314,45 @@ ensure_services_start() {
   # Web server
   svc start nginx
   
-  # PHP-FPM with different version names (AlmaLinux 9 may use php-fpm or versioned names)
-  svc start php-fpm
-  svc start php8.2-fpm
-  svc start php8.1-fpm
-  svc start php8.0-fpm
+  # PHP-FPM with different version names across distros
+  case "$PKG_MGR" in
+    dnf|yum)
+      # RHEL-based systems use php-fpm
+      svc start php-fpm
+      svc start php8.2-fpm
+      svc start php8.1-fpm
+      svc start php8.0-fpm
+      ;;
+    apt)
+      # Debian/Ubuntu use versioned php-fpm services
+      svc start php-fpm
+      svc start php8.2-fpm
+      svc start php8.1-fpm
+      svc start php8.0-fpm
+      ;;
+    pacman)
+      # Arch uses php-fpm
+      svc start php-fpm
+      ;;
+    zypper)
+      # SUSE uses php-fpm
+      svc start php-fpm
+      ;;
+  esac
   
-  # Mail services - Exim is standard on RHEL-based systems
-  log "Starting Exim mail server..."
-  svc start exim || svc start exim4 || log "Note: Exim not started (may start on first run)"
+  # Mail services - different service names per distro
+  case "$PKG_MGR" in
+    apt)
+      # Debian/Ubuntu uses exim4
+      log "Starting Exim4 mail server..."
+      svc start exim4 || log "Note: Exim4 not started"
+      ;;
+    dnf|yum|pacman|zypper)
+      # RHEL, Arch, SUSE use exim
+      log "Starting Exim mail server..."
+      svc start exim || log "Note: Exim not started"
+      ;;
+  esac
   
   # IMAP services
   log "Starting Dovecot IMAP server..."
@@ -524,10 +568,19 @@ resolve_tool_cmds() {
   CMD_MYSQL="$(command -v mysql || true)"
   CMD_RSYNC="$(command -v rsync || true)"
   CMD_RNDC="$(command -v rndc || true)"
-  CMD_EXIM="$(command -v exim || true)"
   CMD_DOVECOT="$(command -v dovecot || true)"
   CMD_NPM="$(command -v npm || true)"
 
+  # Exim command varies by distro
+  if check_cmd exim; then
+    CMD_EXIM="$(command -v exim)"
+  elif check_cmd exim4; then
+    CMD_EXIM="$(command -v exim4)"
+  else
+    CMD_EXIM=""
+  fi
+
+  # Find PHP-FPM across different distros and versions
   if check_cmd php-fpm8.2; then
     CMD_PHP_FPM="$(command -v php-fpm8.2)"
   elif check_cmd php-fpm8.3; then
