@@ -519,6 +519,15 @@ diagnose_nginx() {
   # Check if nginx is installed
   if ! check_cmd nginx; then
     err "✗ Nginx is NOT installed!"
+    log ""
+    log "To install nginx:"
+    case "${PKG_MGR:-}" in
+      apt) log "  sudo apt-get install -y nginx" ;;
+      dnf|yum) log "  sudo dnf install -y nginx" ;;
+      pacman) log "  sudo pacman -S nginx" ;;
+      zypper) log "  sudo zypper install -y nginx" ;;
+      *) log "  Use your distro package manager to install: nginx" ;;
+    esac
     return 1
   fi
   log "✓ Nginx is installed"
@@ -526,11 +535,15 @@ diagnose_nginx() {
   # Check nginx config syntax
   log ""
   log "Checking nginx config syntax..."
-  if nginx -t 2>&1 | grep -q "successful"; then
+  local nginx_test_output
+  nginx_test_output=$(nginx -t 2>&1)
+  if echo "$nginx_test_output" | grep -q "successful"; then
     log "✓ Nginx config is valid"
   else
     err "✗ Nginx config has errors:"
-    nginx -t 2>&1 || true
+    echo "$nginx_test_output" | while IFS= read -r line; do
+      err "  $line"
+    done
     return 1
   fi
   
@@ -543,6 +556,14 @@ diagnose_nginx() {
     log "✓ Nginx process is running (pgrep)"
   else
     err "✗ Nginx process is NOT running"
+    log ""
+    log "To start nginx:"
+    log "  sudo systemctl start nginx"
+    log "  Or: sudo service nginx start"
+    log ""
+    log "Check why nginx failed to start:"
+    log "  sudo systemctl status nginx"
+    log "  sudo journalctl -u nginx -n 30"
     return 1
   fi
   
@@ -1162,6 +1183,11 @@ case "${1:-help}" in
   frontend-logs)
     follow_logs npanel-frontend.service
     ;;
+  diagnose|diagnose-nginx|nginx-diagnose)
+    require_root
+    log "Running nginx diagnostics..."
+    diagnose_nginx
+    ;;
   *)
     cat <<'EOFHELP'
 Npanel Service Control - Works on any Linux distro
@@ -1570,6 +1596,7 @@ parse_args() {
     case "$1" in
       --update) MODE="update"; shift ;;
       --install) MODE="install"; shift ;;
+      --diagnose|diagnose|--nginx-diagnose) MODE="diagnose"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
       --ref) NPANEL_REF="$2"; shift 2 ;;
@@ -1587,6 +1614,16 @@ parse_args() {
 }
 
 main() {
+  # Handle special commands before normal install flow
+  case "${MODE}" in
+    diagnose)
+      require_root
+      log "Npanel Nginx Diagnostics"
+      diagnose_nginx
+      exit $?
+      ;;
+  esac
+
   parse_args "$@"
   self_update "$@"
 
