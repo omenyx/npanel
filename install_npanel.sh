@@ -252,7 +252,7 @@ install_dependencies() {
       log "Installing Exim mail server"
       pkg_install exim || log "Warning: Exim installation failed"
       log "Installing Dovecot IMAP services"
-      pkg_install dovecot dovecot-imapd || log "Warning: Dovecot installation failed"
+      pkg_install dovecot || log "Warning: Dovecot installation failed"
       # Install DNS utilities and server
       log "Installing DNS services"
       pkg_install bind-utils bind || log "Warning: BIND installation failed"
@@ -273,7 +273,7 @@ install_dependencies() {
       pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
       log "Installing mail services (Exim and Dovecot)"
       pkg_install exim || log "Warning: Exim installation failed"
-      pkg_install dovecot dovecot-imapd || log "Warning: Dovecot installation failed"
+      pkg_install dovecot || log "Warning: Dovecot installation failed"
       pkg_install bind-utils bind || log "Warning: BIND installation failed"
       pkg_install pure-ftpd || log "Warning: pure-ftpd installation failed"
       ensure_nodesource_20
