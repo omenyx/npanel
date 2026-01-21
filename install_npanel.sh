@@ -15,6 +15,10 @@ INSTALLER_URL="${INSTALLER_URL:-https://raw.githubusercontent.com/omenyx/npanel/
 MODE="install"
 SKIP_DEPS=0
 SKIP_SELF_UPDATE="${NPANEL_SKIP_SELF_UPDATE:-0}"
+NO_REBUILD=0
+NO_RESTART=0
+LOCKFILE="/var/lock/npanel-install.lock"
+LOCK_ACQUIRED=0
 
 OS_ID=""
 OS_VERSION_ID=""
@@ -81,6 +85,38 @@ self_update() {
   log "Updating installer from GitHub and restarting..."
   NPANEL_SKIP_SELF_UPDATE=1 exec "$tmp" "$@"
 }
+
+# Acquire exclusive installer lock (prevents concurrent runs)
+acquire_lock() {
+  # Prefer flock if available; fallback to mkdir-based lock
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"${LOCKFILE}"
+    if ! flock -n 9; then
+      die "Another Npanel install/update is already running (lock: ${LOCKFILE})."
+    fi
+    LOCK_ACQUIRED=1
+  else
+    if mkdir "${LOCKFILE}.d" 2>/dev/null; then
+      LOCK_ACQUIRED=1
+    else
+      die "Another Npanel install/update is already running (lock dir: ${LOCKFILE}.d)."
+    fi
+  fi
+}
+
+# Always release lock on exit (success or failure)
+release_lock() {
+  if [[ "${LOCK_ACQUIRED}" -eq 1 ]]; then
+    if command -v flock >/dev/null 2>&1; then
+      rm -f "${LOCKFILE}" || true
+    else
+      rmdir "${LOCKFILE}.d" 2>/dev/null || true
+    fi
+    LOCK_ACQUIRED=0
+  fi
+}
+
+trap 'release_lock' EXIT
 
 detect_os() {
   if [[ ! -f /etc/os-release ]]; then
@@ -399,17 +435,23 @@ ensure_repo() {
 
   if [[ -d "$dest/.git" ]]; then
     git config --global --add safe.directory "$dest" || true
-    log "Fetching latest repo in $dest"
     cd "$dest"
+    local prev_commit target_commit
+    prev_commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+    log "Current code version: ${prev_commit}"
+    log "Fetching origin..."
     git fetch --tags origin
     if [[ -n "$NPANEL_REF" ]]; then
       git checkout -f "$NPANEL_REF"
-      git clean -fd
     else
       git checkout -f "$NPANEL_BRANCH"
       git reset --hard "origin/$NPANEL_BRANCH"
-      git clean -fd
     fi
+    git clean -fd
+    target_commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+    log "Target code version:  ${target_commit}"
+    export NPANEL_PREV_COMMIT="$prev_commit"
+    export NPANEL_TARGET_COMMIT="$target_commit"
     return
   fi
 
@@ -764,7 +806,11 @@ UNIT
 
   systemctl daemon-reload
   systemctl enable npanel-backend.service npanel-frontend.service || true
-  systemctl restart npanel-backend.service npanel-frontend.service
+  if [[ "$NO_RESTART" -eq 0 ]]; then
+    systemctl restart npanel-backend.service npanel-frontend.service
+  else
+    log "--no-restart specified: services not restarted"
+  fi
 }
 
 dump_npanel_debug() {
@@ -792,6 +838,10 @@ dump_npanel_debug() {
 verify_deployment() {
   local retries=0
   local max_retries=30
+  if [[ "$NO_RESTART" -eq 1 ]]; then
+    log "Skipping deployment verification due to --no-restart"
+    return
+  fi
   until curl -fsS http://127.0.0.1:3000/system/tools/status >/dev/null 2>&1; do
     retries=$((retries+1))
     if [[ "$retries" -gt "$max_retries" ]]; then
@@ -819,6 +869,8 @@ parse_args() {
       --dir) NPANEL_DIR="$2"; shift 2 ;;
       --skip-deps) SKIP_DEPS=1; shift ;;
       --skip-self-update) SKIP_SELF_UPDATE=1; shift ;;
+      --no-rebuild) NO_REBUILD=1; shift ;;
+      --no-restart) NO_RESTART=1; shift ;;
       *)
         die "Unknown argument: $1"
         ;;
@@ -831,6 +883,7 @@ main() {
   self_update "$@"
 
   require_root
+  acquire_lock
   detect_os
 
   require_cmd git "Install git for your distro and rerun."
@@ -841,18 +894,36 @@ main() {
     install_dependencies
   fi
 
+  # Always stop services before any code changes or builds (no compile against live services)
+  stop_npanel_services
+
+  # Converge repository to deterministic known-good origin state (no merges/pulls)
   ensure_repo
+
   install_management_scripts
   write_env
   ensure_env_defaults
   verify_tools
-  ensure_services_start
-  setup_mysql
-  configure_dovecot_npanel
-  configure_exim_npanel
-  configure_nginx
-  stop_npanel_services
-  install_npanel_dependencies
+
+  # Optional: skip rebuild if already at target commit
+  if [[ "$NO_REBUILD" -eq 1 ]]; then
+    log "--no-rebuild specified: skipping backend/frontend builds"
+  else
+    if [[ -n "${NPANEL_PREV_COMMIT:-}" && -n "${NPANEL_TARGET_COMMIT:-}" && "$NPANEL_PREV_COMMIT" == "$NPANEL_TARGET_COMMIT" ]]; then
+      log "Already at target commit (${NPANEL_TARGET_COMMIT}); skipping rebuild"
+    else
+      # Build backend and frontend; on failure, revert to previous commit and abort
+      if ! install_npanel_dependencies; then
+        err "Build failed; reverting to previous commit: ${NPANEL_PREV_COMMIT:-unknown}"
+        if [[ -d "$NPANEL_DIR/.git" && -n "${NPANEL_PREV_COMMIT:-}" && "$NPANEL_PREV_COMMIT" != "unknown" ]]; then
+          (cd "$NPANEL_DIR" && git reset --hard "$NPANEL_PREV_COMMIT" && git clean -fd) || true
+        fi
+        die "Aborting update due to build failure"
+      fi
+    fi
+  fi
+
+  # Only configure and start services after a successful update/build
   setup_services
   verify_deployment
 
