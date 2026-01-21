@@ -133,7 +133,9 @@ export class ToolsController {
         }
       }
     } catch (e) {
-      this.logger.error(`Failed to get disk usage: ${e instanceof Error ? e.message : String(e)}`);
+      this.logger.error(
+        `Failed to get disk usage: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
 
     return {

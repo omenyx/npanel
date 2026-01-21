@@ -25,7 +25,6 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [skipped, setSkipped] = useState<Set<SetupStep>>(new Set());
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -33,7 +32,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
       try {
         const data = await requestJson<SystemHealth>("/system/tools/status");
         setHealth(data);
-      } catch (err) {
+      } catch {
         setError("Failed to check system health");
       } finally {
         setLoading(false);
@@ -88,7 +87,6 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   const handleSkip = () => {
     if (steps.find((s) => s.id === currentStep)?.canSkip) {
-      setSkipped((prev) => new Set([...prev, currentStep]));
       const nextStepId = steps[steps.findIndex((s) => s.id === currentStep) + 1]
         ?.id as SetupStep;
       setCurrentStep(nextStepId || "complete");
@@ -99,7 +97,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
     try {
       await requestJson("/system/setup/mark-complete", { method: "POST" });
       onComplete();
-    } catch (err) {
+    } catch {
       setError("Failed to mark setup as complete");
     }
   };

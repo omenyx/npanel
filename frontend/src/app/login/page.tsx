@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LockKeyhole, PanelLeft } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { clearSession, getStoredRole } from "@/shared/auth/session";
-import { detectAccessMode, getAccessModeLabel, getProtocolBadge, isRoleAllowedOnCurrentPort, getDashboardPath } from "@/shared/auth/port-routing";
+import { detectAccessMode, getAccessModeLabel, isRoleAllowedOnCurrentPort, getDashboardPath } from "@/shared/auth/port-routing";
 
 type LoginResponse =
   | {
@@ -27,13 +27,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accessMode, setAccessMode] = useState<"admin" | "customer" | "mixed">("mixed");
+  const [accessMode] = useState<"admin" | "customer" | "mixed">(() => detectAccessMode());
 
   useEffect(() => {
-    // Detect port to determine access mode
-    const mode = detectAccessMode();
-    setAccessMode(mode);
-
     // If already logged in, redirect to appropriate dashboard
     const role = getStoredRole();
     if (role) {

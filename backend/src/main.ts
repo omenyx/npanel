@@ -14,10 +14,13 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter((o) => o.length > 0);
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) return callback(null, true);
       if (corsOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('CORS_BLOCKED'), false as any);
+      return callback(new Error('CORS_BLOCKED'), false);
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
@@ -31,4 +34,12 @@ async function bootstrap() {
   );
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
-void bootstrap();
+
+void (async () => {
+  try {
+    await bootstrap();
+  } catch (error) {
+    console.error('Bootstrap error:', error);
+    process.exit(1);
+  }
+})();

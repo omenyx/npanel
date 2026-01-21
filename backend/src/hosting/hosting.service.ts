@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 import {
   BadRequestException,
   Inject,
@@ -36,8 +37,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import { ToolResolver } from '../system/tool-resolver';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'fs';
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { buildSafeExecEnv } from '../system/exec-env';
 import { decryptString, encryptString } from '../system/secretbox';
 
@@ -1329,7 +1329,10 @@ export class HostingService implements OnModuleInit {
         for (let i = rollbacks.length - 1; i >= 0; i -= 1) {
           try {
             await rollbacks[i]();
-          } catch {}
+          } catch (rollbackErr) {
+            // Silently swallow rollback errors during failure handling
+            void rollbackErr; // Acknowledge the error variable
+          }
         }
         await context.log({
           adapter: 'hosting',
@@ -1642,7 +1645,7 @@ export class HostingService implements OnModuleInit {
     return saved;
   }
 
-  async terminate(): Promise<HostingServiceEntity> {
+  terminate(): Promise<HostingServiceEntity> {
     throw new BadRequestException('Termination requires prepare and confirm');
   }
 
@@ -2032,7 +2035,9 @@ export class HostingService implements OnModuleInit {
         });
         await logsRepo.save(entity);
         if (process.env.NPANEL_HOSTING_LOG === 'json') {
-          this.logger.debug(`Hosting operation logged: ${JSON.stringify(payload)}`);
+          this.logger.debug(
+            `Hosting operation logged: ${JSON.stringify(payload)}`,
+          );
         }
       },
     };

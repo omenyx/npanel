@@ -417,17 +417,25 @@ export class NoopMysqlAdapter implements MysqlAdapter {
     return {};
   }
 
-  async listDatabases(
-    context: AdapterContext,
-    username: string,
-  ): Promise<string[]> {
-    return [`${username}_db1`, `${username}_db2`];
+  listDatabases(context: AdapterContext, username: string): Promise<string[]> {
+    // Log database listing operation (fire-and-forget)
+    void context.log({
+      adapter: 'mysql',
+      operation: 'update',
+      targetKind: 'mysql_account',
+      targetKey: username,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'list_databases' },
+      errorMessage: null,
+    });
+    return Promise.resolve([`${username}_db1`, `${username}_db2`]);
   }
 
   async resetPassword(
     context: AdapterContext,
     username: string,
-    _password: string,
+    password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'mysql',
@@ -436,7 +444,7 @@ export class NoopMysqlAdapter implements MysqlAdapter {
       targetKey: username,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'password_reset' },
+      details: { action: 'password_reset', length: password.length },
       errorMessage: null,
     });
     return {};
@@ -478,19 +486,41 @@ export class NoopDnsAdapter implements DnsAdapter {
     return {};
   }
 
-  async listRecords(
+  listRecords(
     context: AdapterContext,
     zoneName: string,
   ): Promise<DnsRecordSpec[]> {
-    return [
+    // Log zone records listing (fire-and-forget)
+    void context.log({
+      adapter: 'dns',
+      operation: 'update',
+      targetKind: 'dns_zone',
+      targetKey: zoneName,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'list_records' },
+      errorMessage: null,
+    });
+    return Promise.resolve([
       { name: '@', type: 'A', data: '127.0.0.1' },
       { name: 'www', type: 'CNAME', data: zoneName },
       { name: '@', type: 'MX', data: `10 ${zoneName}` },
-    ];
+    ]);
   }
 
-  async listZones(context: AdapterContext): Promise<string[]> {
-    return ['example.com', 'test.com'];
+  listZones(context: AdapterContext): Promise<string[]> {
+    // Log zone listing (fire-and-forget)
+    void context.log({
+      adapter: 'dns',
+      operation: 'update',
+      targetKind: 'dns_zone',
+      targetKey: 'all',
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'list_zones' },
+      errorMessage: null,
+    });
+    return Promise.resolve(['example.com', 'test.com']);
   }
 }
 
@@ -534,7 +564,7 @@ export class NoopMailAdapter implements MailAdapter {
   async updatePassword(
     context: AdapterContext,
     address: string,
-    _password: string,
+    password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'mail',
@@ -543,17 +573,25 @@ export class NoopMailAdapter implements MailAdapter {
       targetKey: address,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'password_change' },
+      details: { action: 'password_change', length: password.length },
       errorMessage: null,
     });
     return {};
   }
 
-  async listMailboxes(
-    context: AdapterContext,
-    domain: string,
-  ): Promise<string[]> {
-    return [`postmaster@${domain}`, `info@${domain}`];
+  listMailboxes(context: AdapterContext, domain: string): Promise<string[]> {
+    // Log mailbox listing (fire-and-forget)
+    void context.log({
+      adapter: 'mail',
+      operation: 'update',
+      targetKind: 'mailbox',
+      targetKey: domain,
+      success: true,
+      dryRun: context.dryRun,
+      details: { action: 'list_mailboxes' },
+      errorMessage: null,
+    });
+    return Promise.resolve([`postmaster@${domain}`, `info@${domain}`]);
   }
 }
 
@@ -597,7 +635,7 @@ export class NoopFtpAdapter implements FtpAdapter {
   async resetPassword(
     context: AdapterContext,
     username: string,
-    _password: string,
+    password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'ftp',
@@ -606,7 +644,7 @@ export class NoopFtpAdapter implements FtpAdapter {
       targetKey: username,
       success: true,
       dryRun: context.dryRun,
-      details: { action: 'password_reset' },
+      details: { action: 'password_reset', length: password.length },
       errorMessage: null,
     });
     return {};

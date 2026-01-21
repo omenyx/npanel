@@ -473,7 +473,9 @@ export class MigrationService {
 
     // Start the processing loop in background (no await)
     this.processJobLoop(job.id).catch((err) => {
-      this.logger.error(`Background migration failed for job ${jobId}: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `Background migration failed for job ${jobId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     });
   }
 

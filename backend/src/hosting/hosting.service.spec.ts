@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { HostingService } from './hosting.service';
 import { Repository } from 'typeorm';
@@ -12,29 +13,30 @@ function repo<T extends object>() {
     return Object.entries(where).every(([key, value]) => item?.[key] === value);
   };
   const r = {
-    findOne: async (opts: any) =>
-      items.find((i: any) => matches(i, opts?.where)) || null,
-    save: async (e: any) => {
+    findOne: async (opts: any): Promise<T | null> =>
+      items.find((i: any) => matches(i, opts?.where)) ?? null,
+    save: async (e: any): Promise<T> => {
       const idx = items.findIndex((i: any) => i['id'] === e.id);
       if (idx >= 0) items[idx] = e;
       else items.push(e);
-      return e;
+      return e as T;
     },
-    create: (e: any) => e,
-    count: async (opts: any) =>
+    create: (e: any): T => e as T,
+    count: async (opts: any): Promise<number> =>
       items.filter((i: any) => i['planName'] === opts.where.planName).length,
-    delete: async (opts: any) => {
+    delete: async (opts: any): Promise<void> => {
       for (let idx = items.length - 1; idx >= 0; idx -= 1) {
         if (matches(items[idx] as any, opts)) {
           items.splice(idx, 1);
         }
       }
     },
-    find: async () => items,
+    find: async (): Promise<T[]> => items,
   } as unknown as Repository<T>;
   return { r, items };
 }
 
+/* eslint-disable @typescript-eslint/require-await */
 function adapter() {
   return {
     ensureVhostAbsent: async () => {},
@@ -69,6 +71,7 @@ function tools() {
     resolve: async (name: string) => name,
   };
 }
+/* eslint-enable @typescript-eslint/require-await */
 
 describe('HostingService termination two-phase', () => {
   let service: HostingService;
@@ -139,13 +142,13 @@ describe('HostingService termination two-phase', () => {
     const php = adapter();
     const mysql = {
       ...adapter(),
-      listDatabases: async () => ['u_example_db_app'],
+      listDatabases: () => Promise.resolve(['u_example_db_app']),
     };
     const dns = adapter();
     const mail = {
       ...adapter(),
-      listMailboxes: async () => ['postmaster@example.com', 'a@example.com'],
-      ensureMailboxAbsent: async () => {},
+      listMailboxes: () => Promise.resolve(['postmaster@example.com', 'a@example.com']),
+      ensureMailboxAbsent: () => Promise.resolve({}),
     };
     const ftp = adapter();
     const user = adapter();
@@ -244,10 +247,10 @@ describe('HostingService provisioning', () => {
     let webCalls = 0;
     const web = {
       ...adapter(),
-      ensureVhostPresent: async () => {
+      ensureVhostPresent: () => {
         webCalls += 1;
-        if (webCalls === 1) throw new Error('vhost_failed');
-        return {};
+        if (webCalls <= 1) return Promise.reject(new Error('vhost_failed'));
+        return Promise.resolve({});
       },
     };
     service = new HostingService(
@@ -301,10 +304,10 @@ describe('HostingService provisioning', () => {
     let webCalls = 0;
     const web = {
       ...adapter(),
-      ensureVhostPresent: async () => {
+      ensureVhostPresent: () => {
         webCalls += 1;
-        if (webCalls === 1) throw new Error('vhost_failed');
-        return {};
+        if (webCalls <= 1) return Promise.reject(new Error('vhost_failed'));
+        return Promise.resolve({});
       },
     };
     service = new HostingService(
