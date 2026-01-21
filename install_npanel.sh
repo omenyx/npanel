@@ -1624,6 +1624,32 @@ stop_npanel_services() {
   pkill -f "npm start -- -p 3001" 2>/dev/null || true
 }
 
+setup_ssl_certificates() {
+  local crt_path="/etc/ssl/certs/npanel.crt"
+  local key_path="/etc/ssl/private/npanel.key"
+  
+  # Check if certificates already exist
+  if [[ -f "$crt_path" && -f "$key_path" ]]; then
+    log "✓ SSL certificates already exist"
+    return 0
+  fi
+  
+  log "Generating self-signed SSL certificates..."
+  mkdir -p /etc/ssl/certs /etc/ssl/private
+  
+  # Generate self-signed certificate valid for 365 days
+  openssl req -x509 -newkey rsa:2048 -keyout "$key_path" -out "$crt_path" \
+    -days 365 -nodes \
+    -subj "/C=US/ST=State/L=City/O=Npanel/CN=localhost" 2>/dev/null || \
+    die "Failed to generate SSL certificates"
+  
+  # Ensure proper permissions
+  chmod 644 "$crt_path"
+  chmod 600 "$key_path"
+  
+  log "✓ SSL certificates generated at $crt_path"
+}
+
 configure_nginx() {
   local conf=""
   local enable_link=""
@@ -1908,6 +1934,10 @@ NGCONF
     mkdir -p "$(dirname "$enable_link")"
     ln -sf "$conf" "$enable_link"
   fi
+  
+  # Generate SSL certificates before testing nginx config
+  setup_ssl_certificates
+  
   nginx -t || die "Nginx configuration syntax error!"
   svc restart nginx
   
