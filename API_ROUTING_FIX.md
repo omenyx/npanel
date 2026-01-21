@@ -44,7 +44,53 @@ npm run build || die "Frontend build failed!"
 
 **Why**: This ensures the frontend build explicitly uses `/v1` as the API base URL, not the hardcoded fallback.
 
-### 2. Nginx Configuration Validation
+### 2. Comprehensive API Routing Validation Function
+**File**: `install_npanel.sh` - `validate_api_routing()` function
+
+New reusable validation function that checks:
+- Nginx is running and listening
+- Nginx configuration syntax is valid
+- `/v1` location block exists
+- Backend upstream is defined
+- API endpoint responds correctly
+
+```bash
+validate_api_routing "test-name" "http://127.0.0.1:8080/v1/health" [skip_if_services_down]
+```
+
+**Why**: Centralized, consistent validation used at multiple installation stages.
+
+### 3. Validation at Multiple Install Stages
+
+#### a) During Nginx Configuration
+```bash
+configure_nginx() {
+  # ... configure nginx file ...
+  validate_api_routing "nginx configuration" "..." 1  # skip if services down
+}
+```
+
+#### b) During Deployment Verification
+```bash
+verify_deployment() {
+  # ... wait for backend health ...
+  if ! validate_api_routing "API routing and connectivity" "..." 0; then
+    die "API routing validation failed"
+  fi
+}
+```
+
+#### c) Before Updates (Pre-update Check)
+```bash
+if [[ "$MODE" == "update" ]]; then
+  log "Running pre-update environment validation..."
+  validate_api_routing "Current environment" "..." 0
+fi
+```
+
+**Why**: Catches routing issues at every stage, not just after installation.
+
+### 4. Nginx Configuration Validation
 **File**: `install_npanel.sh` - `configure_nginx()` function
 
 Added validation checks:
@@ -64,27 +110,35 @@ fi
 
 **Why**: Prevents installation from completing if critical nginx configuration is missing.
 
-### 3. Deployment Verification
-**File**: `install_npanel.sh` - `verify_deployment()` function
+### 4. Nginx Configuration Validation
+**File**: `install_npanel.sh` - `configure_nginx()` function
 
-Added API routing verification:
+Added validation checks:
 ```bash
-# Verify nginx is routing /v1 API requests correctly
-log "Verifying nginx API routing to /v1..."
-retries=0
-until curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; do
-    retries=$((retries+1))
-    if [[ "$retries" -gt 10 ]]; then
-        warn "⚠ WARNING: Nginx /v1 API routing verification failed!"
-        break
-    fi
-    sleep 1
-done
+nginx -t || die "Nginx configuration syntax error!"
+svc restart nginx
+
+# Validate nginx routing configuration using comprehensive validator
+validate_api_routing "nginx configuration" "http://127.0.0.1:8080/v1/health" 1 || warn "..."
 ```
 
-**Why**: Detects API routing issues before installation completes, helping users troubleshoot immediately.
+**Why**: Prevents installation from completing if critical nginx configuration is missing.
 
-### 4. Enhanced Troubleshooting Guide
+### 5. Deployment Verification
+**File**: `install_npanel.sh` - `verify_deployment()` function
+
+Uses new comprehensive validation function:
+```bash
+# Verify complete API routing using comprehensive validator
+if ! validate_api_routing "API routing and connectivity" "http://127.0.0.1:8080/v1/health" 0; then
+    dump_npanel_debug
+    die "API routing validation failed - frontend will not be able to reach backend"
+fi
+```
+
+**Why**: Detects API routing issues before installation completes, with detailed diagnostics.
+
+### 6. Enhanced Troubleshooting Guide
 **File**: `install_npanel.sh` - Post-install message
 
 Added section for API routing troubleshooting:
@@ -141,6 +195,95 @@ curl -fsSL https://github.com/omenyx/npanel/raw/main/install_npanel.sh | bash
 # ✓ "Backend health probe failed on port 3000." (should NOT appear)
 ```
 
+## Testing and Validation Output
+
+### Fresh Installation
+```bash
+$ curl -fsSL https://github.com/omenyx/npanel/raw/main/install_npanel.sh | bash
+
+# Expected validation output:
+✓ Frontend build successful: .next directory verified
+✓ Validating nginx routing configuration...
+✓ Nginx configuration syntax valid
+✓ Nginx /v1 location block found
+✓ Nginx backend upstream configured
+✓ Nginx configuration validated successfully
+
+✓ Validating API routing and connectivity...
+✓ Nginx configuration syntax valid
+✓ Nginx /v1 location block found
+✓ Nginx backend upstream configured
+✓ API endpoint responding correctly
+✓ API routing validation PASSED
+```
+
+### Update (Pre-Check)
+```bash
+$ sudo ./install_npanel.sh --update
+
+# Pre-update validation output:
+✓ Running pre-update environment validation...
+✓ Checking API routing configuration...
+✓ Validating Current environment...
+✓ Nginx configuration syntax valid
+✓ Nginx /v1 location block found
+✓ Nginx backend upstream configured
+✓ API endpoint responding correctly
+✓ Current environment validation PASSED
+
+# Then proceeds with update...
+```
+
+## Validation Function Details
+
+### `validate_api_routing()` Parameters
+
+```bash
+validate_api_routing [test_name] [endpoint] [skip_if_services_down]
+```
+
+| Parameter | Example | Description |
+|-----------|---------|-------------|
+| `test_name` | `"nginx configuration"` | Name shown in logs |
+| `endpoint` | `"http://127.0.0.1:8080/v1/health"` | Endpoint to test |
+| `skip_if_services_down` | `0` or `1` | Skip endpoint test if services not running |
+
+### Validation Checks (in order)
+
+1. **Nginx Running**: Checks if nginx is active with systemctl
+2. **Syntax Valid**: Runs `nginx -t` to check configuration
+3. **`/v1` Location Block**: Searches for `location /v1` in nginx configs
+4. **Backend Upstream**: Searches for `upstream npanel_backend` definition
+5. **Endpoint Response**: Tests actual API response via curl
+
+### Return Values
+
+- `0` = Validation passed
+- `1` = Validation failed (stops installation)
+
+### Usage Examples
+
+```bash
+# During nginx config (skip endpoint test since services may not be up)
+validate_api_routing "nginx configuration" "http://127.0.0.1:8080/v1/health" 1
+
+# During deployment (services are up, fail if endpoint doesn't respond)
+validate_api_routing "API routing" "http://127.0.0.1:8080/v1/health" 0
+
+# Pre-update check (services should be running)
+validate_api_routing "Current environment" "http://127.0.0.1:8080/v1/health" 0
+```
+
+## Files Modified
+
+| File | Changes | Lines |
+|------|---------|-------|
+| `install_npanel.sh` | New `validate_api_routing()` function | +80 |
+| `install_npanel.sh` | Call validation in `configure_nginx()` | +5 |
+| `install_npanel.sh` | Call validation in `verify_deployment()` | +2 |
+| `install_npanel.sh` | Pre-update environment check | +8 |
+| `frontend/src/shared/config/env.ts` | Changed default API base URL | 1 |
+
 ## Nginx Configuration Structure
 
 The correct configuration includes these critical sections:
@@ -191,20 +334,6 @@ location /api {
 6. Frontend calls `/v1/auth/login`
 7. Nginx correctly routes to backend at `/v1/auth/login`
 8. Login works, no API errors
-
-## Files Modified
-
-1. **install_npanel.sh**
-   - Frontend build: Add `export NEXT_PUBLIC_API_BASE_URL="/v1"`
-   - Nginx config function: Add validation checks
-   - Deployment verification: Add `/v1/health` check
-   - Post-install message: Add API routing troubleshooting
-
-2. **frontend/src/shared/config/env.ts**
-   - Changed default API base URL from `/api` to `/v1`
-
-3. **npanel_nginx.conf** (new)
-   - Correct multi-port nginx configuration
 
 ## Validation Commands
 
