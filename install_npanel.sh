@@ -2220,6 +2220,9 @@ parse_args() {
 }
 
 main() {
+  # Parse arguments first to set MODE and other variables
+  parse_args "$@"
+  
   # Handle special commands before normal install flow
   case "${MODE}" in
     diagnose)
@@ -2269,7 +2272,6 @@ main() {
       ;;
   esac
 
-  parse_args "$@"
   self_update "$@"
 
   require_root
