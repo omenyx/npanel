@@ -34,7 +34,7 @@ export default function CustomerDashboard() {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const data = await requestJson<HostingService>("/v1/customer/hosting/services");
+        const data = await requestJson<HostingService[]>("/v1/customer/hosting/services");
         setServices(data);
       } catch {
         return;

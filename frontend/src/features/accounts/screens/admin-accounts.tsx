@@ -244,8 +244,6 @@ export function AdminAccountsScreen() {
     setError(null);
     setWizardStep(2);
     setCreationCredentials(null);
-    const token = getAccessToken();
-    if (!token) return;
 
     try {
       const dto = {
@@ -387,8 +385,6 @@ export function AdminAccountsScreen() {
 
   const openTerminateFlow = async (id: string) => {
     setError(null);
-    const token = getAccessToken();
-    if (!token) return;
     try {
       const payload = await requestJson<any>(
         `/v1/hosting/services/${id}/terminate/prepare`,
