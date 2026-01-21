@@ -1169,6 +1169,12 @@ ensure_env_defaults() {
     return
   fi
   
+  # Ensure DATABASE_PATH is set
+  if ! grep -qE '^DATABASE_PATH=' "$dest"; then
+    echo "DATABASE_PATH=$NPANEL_DIR/data/npanel.sqlite" >> "$dest"
+    log "Added DATABASE_PATH to .env"
+  fi
+  
   # Ensure NPANEL_ROOT_PASSWORD is set
   if ! grep -qE '^NPANEL_ROOT_PASSWORD=' "$dest"; then
     local root_pass; root_pass="$(openssl rand -hex 16)"
