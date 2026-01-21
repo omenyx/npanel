@@ -1327,6 +1327,13 @@ UNIT
 
   systemctl daemon-reload
   systemctl enable npanel-backend.service npanel-frontend.service || true
+  
+  # Configure nginx before restarting services
+  configure_nginx
+  
+  # Ensure all system services (nginx, mail, FTP, DNS, etc.) are started
+  ensure_services_start
+  
   if [[ "$NO_RESTART" -eq 0 ]]; then
     systemctl restart npanel-backend.service npanel-frontend.service
   else
