@@ -16,6 +16,9 @@ import { GovernanceModule } from './governance/governance.module';
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: true,
       logging: process.env.LOG_LEVEL === 'debug',
+      // Retry configuration for database connection resilience
+      retryAttempts: 5,
+      retryDelay: 1000,
     }),
     IamModule,
     HealthModule,

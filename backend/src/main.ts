@@ -3,10 +3,31 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { validateEnvironment } from './config/env.validation';
+import * as fs from 'fs';
+import * as path from 'path';
 
 async function bootstrap() {
   // Validate environment before starting app
   validateEnvironment();
+  
+  // Ensure database directory exists and is writable
+  const dbPath = process.env.DATABASE_PATH || './npanel.sqlite';
+  const dbDir = path.dirname(dbPath);
+  
+  if (dbDir !== '.' && dbDir !== './') {
+    try {
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true, mode: 0o755 });
+        console.log(`[DATABASE] Created directory: ${dbDir}`);
+      }
+      // Verify directory is writable
+      fs.accessSync(dbDir, fs.constants.W_OK);
+      console.log(`[DATABASE] Using SQLite database at: ${dbPath}`);
+    } catch (error) {
+      console.error(`[DATABASE] Error setting up database directory: ${error}`);
+      throw error;
+    }
+  }
   
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
