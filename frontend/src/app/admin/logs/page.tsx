@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, RefreshCw, FileText, Database, Terminal } from "lucide-react";
 import { getAccessToken, requestJson } from "@/shared/api/api-client";
 
@@ -33,7 +33,7 @@ export default function LogsPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoadingLogs(true);
     setErrorLogs(null);
     const token = getAccessToken();
@@ -47,9 +47,9 @@ export default function LogsPage() {
     } finally {
       setLoadingLogs(false);
     }
-  };
+  }, []);
 
-  const fetchLogFiles = async () => {
+  const fetchLogFiles = useCallback(async () => {
     setLoadingFiles(true);
     const token = getAccessToken();
     if (!token) return;
@@ -59,14 +59,14 @@ export default function LogsPage() {
         if (data.files && data.files.length > 0 && !selectedFile) {
             setSelectedFile(data.files[0]);
         }
-    } catch (e) {
+    } catch {
         setLogFiles([]);
     } finally {
         setLoadingFiles(false);
     }
-  };
+  }, [selectedFile]);
 
-  const fetchFileContent = async (path: string) => {
+  const fetchFileContent = useCallback(async (path: string) => {
       setLoadingFile(true);
       const token = getAccessToken();
       if (!token) return;
@@ -80,23 +80,23 @@ export default function LogsPage() {
                   contentRef.current.scrollTop = contentRef.current.scrollHeight;
               }
           }, 100);
-      } catch (e) {
+      } catch {
           setFileContent("Error loading file.");
       } finally {
           setLoadingFile(false);
       }
-  };
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'panel') fetchLogs();
     if (activeTab === 'system') fetchLogFiles();
-  }, [activeTab]);
+  }, [activeTab, fetchLogFiles, fetchLogs]);
 
   useEffect(() => {
       if (activeTab === 'system' && selectedFile) {
           fetchFileContent(selectedFile);
       }
-  }, [selectedFile, activeTab]);
+  }, [selectedFile, activeTab, fetchFileContent]);
 
   const filteredLogs = showErrorsOnly
     ? logs.filter((log) => !log.success)

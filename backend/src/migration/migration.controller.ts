@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { MigrationService } from './migration.service';
@@ -83,7 +84,7 @@ export class MigrationController {
 
   @Post('prepare-create')
   @HttpCode(HttpStatus.OK)
-  async prepareCreateJob(@Body() body: CreateMigrationJobDto) {
+  async prepareCreateJob(@Body() body: CreateMigrationJobDto, @Req() req: any) {
     return this.governance.prepare({
       module: 'migrations',
       action: 'create_migration_job',
@@ -93,13 +94,13 @@ export class MigrationController {
       risk: 'high',
       reversibility: 'requires_restore',
       impactedSubsystems: ['control_plane_db', 'remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
-      actor: { actorRole: 'ADMIN', actorType: 'admin' },
+      actor: { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' },
     });
   }
 
   @Post('prepare-create-from-source')
   @HttpCode(HttpStatus.OK)
-  async prepareCreateFromSource(@Body() body: CreateMigrationFromSourceDto) {
+  async prepareCreateFromSource(@Body() body: CreateMigrationFromSourceDto, @Req() req: any) {
     return this.governance.prepare({
       module: 'migrations',
       action: 'create_migration_from_source',
@@ -107,16 +108,17 @@ export class MigrationController {
       targetKey: body.name,
       payload: body as any,
       risk: 'high',
-      reversibility: 'requires_restore',
+      reversibility: 'irreversible',
       impactedSubsystems: ['control_plane_db', 'remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
-      actor: { actorRole: 'ADMIN', actorType: 'admin' },
+      actor: { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' },
     });
   }
 
   @Post('confirm-create-from-source')
   @HttpCode(HttpStatus.OK)
-  async confirmCreateFromSource(@Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmCreateFromSource(@Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const steps: ActionStep[] = [
       { name: 'create_migration_job', status: 'SUCCESS' },
       { name: 'add_accounts', status: 'SUCCESS' },
@@ -150,8 +152,9 @@ export class MigrationController {
 
   @Post('confirm-create')
   @HttpCode(HttpStatus.OK)
-  async confirmCreateJob(@Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmCreateJob(@Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const steps: ActionStep[] = [{ name: 'create_migration_job', status: 'SUCCESS' }];
     try {
       const job = await this.migrations.createJob(intent.payload as any);
@@ -189,8 +192,9 @@ export class MigrationController {
 
   @Post(':id/accounts/confirm-add')
   @HttpCode(HttpStatus.OK)
-  async confirmAddAccount(@Param('id') id: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmAddAccount(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const payload = intent.payload as any;
     if (payload?.id !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'add_migration_account', status: 'SUCCESS' }];
@@ -222,8 +226,9 @@ export class MigrationController {
 
   @Post(':id/plan/confirm')
   @HttpCode(HttpStatus.OK)
-  async confirmPlan(@Param('id') id: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmPlan(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if ((intent.payload as any)?.id !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'plan_migration', status: 'SUCCESS' }];
     try {
@@ -246,7 +251,7 @@ export class MigrationController {
       targetKey: id,
       payload: { id } as any,
       risk: 'high',
-      reversibility: 'requires_restore',
+      reversibility: 'irreversible',
       impactedSubsystems: ['remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
       actor: { actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined },
     });
@@ -254,8 +259,9 @@ export class MigrationController {
 
   @Post(':id/run-next/confirm')
   @HttpCode(HttpStatus.OK)
-  async confirmRunNext(@Param('id') id: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmRunNext(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if ((intent.payload as any)?.id !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'run_next_step', status: 'SUCCESS' }];
     try {
@@ -278,7 +284,7 @@ export class MigrationController {
       targetKey: id,
       payload: { id } as any,
       risk: 'high',
-      reversibility: 'requires_restore',
+      reversibility: 'irreversible',
       impactedSubsystems: ['worker_queue'],
       actor: { actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined },
     });
@@ -286,8 +292,9 @@ export class MigrationController {
 
   @Post(':id/start/confirm')
   @HttpCode(HttpStatus.OK)
-  async confirmStart(@Param('id') id: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmStart(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if ((intent.payload as any)?.id !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'start_background_migration', status: 'SUCCESS' }];
     try {

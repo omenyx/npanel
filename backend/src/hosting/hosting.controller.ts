@@ -158,7 +158,8 @@ export class HostingController {
   @Post('confirm-create')
   @HttpCode(HttpStatus.OK)
   async confirmCreate(@Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'create_and_provision', status: 'SUCCESS' }];
     try {
@@ -195,7 +196,8 @@ export class HostingController {
   @Post(':id/confirm-provision')
   @HttpCode(HttpStatus.OK)
   async confirmProvision(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const returnCredentials = (intent.payload as any)?.returnCredentials === true;
@@ -207,6 +209,48 @@ export class HostingController {
       return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
     } catch (e) {
       steps[0] = { name: 'provision', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
+      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+    }
+  }
+
+  @Post(':id/resume-provision')
+  @HttpCode(HttpStatus.OK)
+  async resumeProvision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const service = await this.hosting.resumeProvision(id, meta);
+    return service;
+  }
+
+  @Post(':id/prepare-retry-provision')
+  @HttpCode(HttpStatus.OK)
+  async prepareRetryProvision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    return this.governance.prepare({
+      module: 'hosting',
+      action: 'retry_provision',
+      targetKind: 'hosting_service',
+      targetKey: id,
+      payload: { id } as any,
+      risk: 'high',
+      reversibility: 'irreversible',
+      impactedSubsystems: ['control_plane_db', 'linux_users', 'nginx', 'php_fpm', 'dns', 'mail', 'mysql', 'ftp'],
+      actor,
+    });
+  }
+
+  @Post(':id/confirm-retry-provision')
+  @HttpCode(HttpStatus.OK)
+  async confirmRetryProvision(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+    if (intent.targetKey !== id) throw new Error('Intent target mismatch');
+    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
+    const steps: ActionStep[] = [{ name: 'retry_provision', status: 'SUCCESS' }];
+    try {
+      const result = await this.hosting.retryProvision(id, meta);
+      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+    } catch (e) {
+      steps[0] = { name: 'retry_provision', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
       return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
     }
   }
@@ -233,7 +277,8 @@ export class HostingController {
   @Post(':id/confirm-suspend')
   @HttpCode(HttpStatus.OK)
   async confirmSuspend(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'suspend', status: 'SUCCESS' }];
@@ -268,7 +313,8 @@ export class HostingController {
   @Post(':id/confirm-unsuspend')
   @HttpCode(HttpStatus.OK)
   async confirmUnsuspend(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'unsuspend', status: 'SUCCESS' }];
@@ -303,7 +349,8 @@ export class HostingController {
   @Post(':id/confirm-soft-delete')
   @HttpCode(HttpStatus.OK)
   async confirmSoftDelete(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'soft_delete', status: 'SUCCESS' }];
@@ -338,7 +385,8 @@ export class HostingController {
   @Post(':id/confirm-restore')
   @HttpCode(HttpStatus.OK)
   async confirmRestore(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'restore', status: 'SUCCESS' }];
@@ -376,7 +424,8 @@ export class HostingController {
   @Post(':id/confirm-credentials-init')
   @HttpCode(HttpStatus.OK)
   async confirmInitCredentials(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
     const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
     const steps: ActionStep[] = [{ name: 'init_credentials', status: 'SUCCESS' }];

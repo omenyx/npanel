@@ -29,12 +29,34 @@ export class CustomerHostingController {
   ) {}
 
   private async getCustomerForUser(req: any) {
+    const impersonatedCustomerId = req.user?.impersonation?.customerId ?? null;
+    if (impersonatedCustomerId) {
+      return this.accounts.get(impersonatedCustomerId);
+    }
     const userId = req.user.id;
     const customer = await this.accounts.findByOwnerUserId(userId);
     if (!customer) {
       throw new UnauthorizedException('No customer account linked to user');
     }
     return customer;
+  }
+
+  private getActor(req: any, reason?: string) {
+    const imp = req.user?.impersonation ?? null;
+    if (imp?.active) {
+      return {
+        actorId: imp.adminId,
+        actorRole: 'ADMIN',
+        actorType: 'impersonation',
+        reason: typeof reason === 'string' ? reason : undefined,
+      };
+    }
+    return {
+      actorId: req.user?.id,
+      actorRole: 'CUSTOMER',
+      actorType: 'customer',
+      reason: typeof reason === 'string' ? reason : undefined,
+    };
   }
 
   @Get()
@@ -183,7 +205,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
       action: 'create_mailbox',
@@ -207,7 +229,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     if ((intent.payload as any)?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'create_mailbox', status: 'SUCCESS' }];
     try {
@@ -230,7 +252,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
       action: 'delete_mailbox',
@@ -254,7 +276,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'delete_mailbox', status: 'SUCCESS' }];
@@ -277,7 +299,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
       action: 'update_mailbox_password',
@@ -301,7 +323,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'update_mailbox_password', status: 'SUCCESS' }];
@@ -324,7 +346,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'databases',
       action: 'reset_database_password',
@@ -348,7 +370,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'reset_database_password', status: 'SUCCESS' }];
@@ -371,7 +393,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'ftp',
       action: 'reset_ftp_password',
@@ -395,7 +417,7 @@ export class CustomerHostingController {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'reset_ftp_password', status: 'SUCCESS' }];

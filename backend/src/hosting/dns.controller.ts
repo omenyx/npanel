@@ -98,8 +98,9 @@ export class DnsController {
 
   @Post('zones/confirm-create')
   @HttpCode(HttpStatus.OK)
-  async confirmCreateZone(@Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmCreateZone(@Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const steps: ActionStep[] = [{ name: 'apply_dns_zone', status: 'SUCCESS' }];
     try {
       await this.dns.ensureZonePresent(this.createContext(), intent.payload as any);
@@ -130,8 +131,9 @@ export class DnsController {
 
   @Post('zones/:name/confirm-update')
   @HttpCode(HttpStatus.OK)
-  async confirmUpdateZone(@Param('name') name: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmUpdateZone(@Param('name') name: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if (intent.targetKey !== name) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'apply_dns_zone', status: 'SUCCESS' }];
     try {
@@ -162,8 +164,9 @@ export class DnsController {
 
   @Post('zones/:name/confirm-delete')
   @HttpCode(HttpStatus.OK)
-  async confirmDeleteZone(@Param('name') name: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmDeleteZone(@Param('name') name: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if (intent.targetKey !== name) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'remove_dns_zone', status: 'SUCCESS' }];
     try {

@@ -16,11 +16,10 @@ export async function requestJson<T>(
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
 
   if (auth) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const csrf = getCookie("csrf_token");
+    if (csrf) headers.set("x-csrf-token", csrf);
   }
-
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
   const contentType = res.headers.get("content-type") ?? "";
 
   if (res.ok) {
@@ -59,6 +58,14 @@ export function getAccessToken(): string | null {
   }
 }
 
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()!.split(";").shift() ?? null;
+  return null;
+}
+
 async function safeParseErrorBody(
   res: Response,
   contentType: string,
@@ -70,4 +77,3 @@ async function safeParseErrorBody(
     return null;
   }
 }
-

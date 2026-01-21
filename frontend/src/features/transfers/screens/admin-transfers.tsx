@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRightLeft,
   Plus,
@@ -11,7 +11,7 @@ import {
   Eye,
   Terminal,
 } from "lucide-react";
-import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import { requestJson } from "@/shared/api/api-client";
 import {
   GovernedActionDialog,
   type GovernedConfirmation,
@@ -102,7 +102,6 @@ export function AdminTransfersScreen() {
   const [selectedJob, setSelectedJob] = useState<MigrationJob | null>(null);
   const [steps, setSteps] = useState<MigrationStep[]>([]);
   const [logs, setLogs] = useState<MigrationLog[]>([]);
-  const [polling, setPolling] = useState(false);
   const [starting, setStarting] = useState(false);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [actionDialogTitle, setActionDialogTitle] = useState("");
@@ -114,13 +113,11 @@ export function AdminTransfersScreen() {
 
   const fetchData = async () => {
     setLoading(true);
-    const token = getAccessToken();
-    if (!token) return;
 
     try {
       const data = await requestJson<MigrationJob[]>("/v1/migrations");
       setTransfers(data);
-    } catch (err) {
+    } catch {
       setError("Failed to load transfers");
     } finally {
       setLoading(false);
@@ -128,21 +125,17 @@ export function AdminTransfersScreen() {
   };
 
   const fetchSshKey = async () => {
-    const token = getAccessToken();
-    if (!token) return;
     try {
       const data = await requestJson<{ publicKey: string }>(
         "/system/tools/ssh-key",
       );
       setSshKey(data.publicKey);
-    } catch (e) {
+    } catch {
       setSshKey(null);
     }
   };
 
   const fetchJobDetails = async (jobId: string) => {
-    const token = getAccessToken();
-    if (!token) return;
     try {
       const [stepsData, logsData, updatedJob] = await Promise.all([
         requestJson<MigrationStep[]>(`/v1/migrations/${jobId}/steps`),
@@ -153,7 +146,7 @@ export function AdminTransfersScreen() {
       setLogs(logsData);
       setSelectedJob(updatedJob);
       setTransfers((prev) => prev.map((t) => (t.id === updatedJob.id ? updatedJob : t)));
-    } catch (e) {
+    } catch {
       return;
     }
   };
@@ -180,13 +173,12 @@ export function AdminTransfersScreen() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (
-      selectedJob &&
-      (selectedJob.status === "running" || selectedJob.status === "pending")
-    ) {
-      fetchJobDetails(selectedJob.id);
+    const selectedJobId = selectedJob?.id ?? null;
+    const selectedJobStatus = selectedJob?.status ?? null;
+    if (selectedJobId && (selectedJobStatus === "running" || selectedJobStatus === "pending")) {
+      fetchJobDetails(selectedJobId);
       interval = setInterval(() => {
-        fetchJobDetails(selectedJob.id);
+        fetchJobDetails(selectedJobId);
       }, 3000);
     }
     return () => clearInterval(interval);
@@ -196,8 +188,6 @@ export function AdminTransfersScreen() {
     if (!selectedJob) return;
     setStarting(true);
     setError(null);
-    const token = getAccessToken();
-    if (!token) return;
     try {
       const confirmation = await requestJson<GovernedConfirmation>(
         `/v1/migrations/${selectedJob.id}/start/prepare`,
@@ -220,7 +210,7 @@ export function AdminTransfersScreen() {
         return res;
       });
       setActionDialogOpen(true);
-    } catch (e) {
+    } catch {
       setError("Failed to start migration");
     } finally {
       setStarting(false);
@@ -232,8 +222,6 @@ export function AdminTransfersScreen() {
     setError(null);
     setPreflight(null);
     try {
-      const token = getAccessToken();
-      if (!token) return;
       const res = await requestJson<SourcePreflight>("/v1/migrations/source/preflight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,8 +251,6 @@ export function AdminTransfersScreen() {
     setDiscoveredAccounts([]);
     setSelectedAccounts(new Set());
     try {
-      const token = getAccessToken();
-      if (!token) return;
       const res = await requestJson<{ accounts: DiscoveredAccount[] }>(
         "/v1/migrations/source/accounts",
         {
@@ -293,9 +279,6 @@ export function AdminTransfersScreen() {
     e.preventDefault();
     setCreating(true);
     setError(null);
-
-    const token = getAccessToken();
-    if (!token) return;
 
     try {
       const selected = discoveredAccounts.filter((a) => selectedAccounts.has(a.username));

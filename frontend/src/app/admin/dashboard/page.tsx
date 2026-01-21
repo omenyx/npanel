@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Activity, AlertTriangle, HardDrive, Server, Users } from "lucide-react";
+import { Activity, AlertTriangle, HardDrive, Server } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
 import { Button } from "@/shared/ui/button";
 import { normalizeToolStatusList, type ToolStatusItem } from "@/shared/api/system-status";

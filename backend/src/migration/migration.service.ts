@@ -18,6 +18,7 @@ import { randomBytes } from 'node:crypto';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
 import { buildSafeExecEnv } from '../system/exec-env';
+import { encryptString, decryptString } from '../system/secretbox';
 
 @Injectable()
 export class MigrationService {
@@ -235,7 +236,7 @@ export class MigrationService {
       name: input.name,
       sourceType: input.sourceType,
       status: 'pending',
-      sourceConfig: input.sourceConfig ?? null,
+      sourceConfig: input.sourceConfig ? encryptString(JSON.stringify(input.sourceConfig)) : null,
       dryRun: input.dryRun ?? false,
     });
     const saved = await this.jobs.save(job);
@@ -264,7 +265,7 @@ export class MigrationService {
       name: input.name,
       sourceType: input.sourceType,
       status: 'pending',
-      sourceConfig: input.sourceConfig ?? null,
+      sourceConfig: input.sourceConfig ? encryptString(JSON.stringify(input.sourceConfig)) : null,
       dryRun: input.dryRun ?? false,
     });
     const saved = await this.jobs.save(job);
@@ -276,16 +277,20 @@ export class MigrationService {
   }
 
   async listJobs(): Promise<MigrationJob[]> {
-    return this.jobs.find({
+    const items = await this.jobs.find({
       order: { createdAt: 'DESC' },
     });
+    items.forEach((j) => this.hydrateDecryptedConfig(j));
+    return items;
   }
 
   async listJobsForCustomer(customerId: string): Promise<MigrationJob[]> {
-    return this.jobs.find({
+    const items = await this.jobs.find({
       where: { customerId },
       order: { createdAt: 'DESC' },
     });
+    items.forEach((j) => this.hydrateDecryptedConfig(j));
+    return items;
   }
 
   async getJob(id: string): Promise<MigrationJob> {
@@ -296,6 +301,7 @@ export class MigrationService {
     if (!job) {
       throw new NotFoundException('Migration job not found');
     }
+    this.hydrateDecryptedConfig(job);
     return job;
   }
 
@@ -310,6 +316,7 @@ export class MigrationService {
     if (!job) {
       throw new NotFoundException('Migration job not found');
     }
+    this.hydrateDecryptedConfig(job);
     return job;
   }
 
@@ -564,6 +571,33 @@ export class MigrationService {
     });
   }
 
+  private hydrateDecryptedConfig(job: MigrationJob): void {
+    if (job.sourceConfig) {
+      try {
+        const plain = decryptString(job.sourceConfig);
+        (job as any).sourceConfig = JSON.parse(plain);
+      } catch {
+        (job as any).sourceConfig = {};
+      }
+    } else {
+      (job as any).sourceConfig = {};
+    }
+  }
+
+  private getDecryptedConfig(job: MigrationJob): Record<string, unknown> {
+    const raw = (job as any).sourceConfig;
+    if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+    if (typeof job.sourceConfig === 'string' && job.sourceConfig.length > 0) {
+      try {
+        const plain = decryptString(job.sourceConfig);
+        return JSON.parse(plain);
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
   private async planLiveSshJob(job: MigrationJob): Promise<MigrationStep[]> {
     if (!job.accounts || job.accounts.length === 0) {
       throw new BadRequestException(
@@ -626,7 +660,7 @@ export class MigrationService {
     job: MigrationJob,
     account: MigrationAccount,
   ): string {
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const homeRootValue = config['cpanelHome'];
     const homeRoot =
       typeof homeRootValue === 'string' && homeRootValue.length > 0
@@ -640,7 +674,7 @@ export class MigrationService {
     job: MigrationJob,
     account: MigrationAccount,
   ): string {
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const rootValue = config['targetRoot'];
     const root =
       typeof rootValue === 'string' && rootValue.length > 0
@@ -675,7 +709,7 @@ export class MigrationService {
   }
 
   private handleValidateSourceHost(job: MigrationJob): void {
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const hostValue = config['host'];
     const sshUserValue = config['sshUser'];
     if (typeof hostValue !== 'string' || hostValue.length === 0) {
@@ -694,7 +728,7 @@ export class MigrationService {
     if (!account) {
       throw new Error('Provision step requires an account');
     }
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const planLimits = config['planLimits'] as Record<string, unknown> | undefined;
     const planNameValue = config['planName'] as string | undefined;
     let planName = typeof planNameValue === 'string' && planNameValue.length > 0 ? planNameValue : 'basic';
@@ -761,7 +795,7 @@ export class MigrationService {
     const plans = await this.hosting.listPlans();
     const plan = plans.find((p) => p.name === (service.planName || 'basic'));
     const maxDbs = Number(plan?.maxDatabases ?? 0);
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const dumps = Array.isArray((config as any)['dbDumps']) ? ((config as any)['dbDumps'] as Array<{ name: string; path: string }>) : [];
     if (dumps.length === 0) {
       return;
@@ -771,35 +805,28 @@ export class MigrationService {
       errorWithDetails.details = { maxDbs, requested: dumps.length };
       throw errorWithDetails;
     }
-    const domain = service.primaryDomain.toLowerCase();
-    const base = domain.split('.')[0] ?? 'site';
-    const safe = base.replace(/[^a-z0-9]/g, '').slice(0, 8) || 'site';
-    const username = `u_${safe}`;
-    const mysqlUsername = `${username}_db`;
+    const mysqlUsername = service.mysqlUsername || `${(service.systemUsername || 'u_site')}_db`;
+    const mysqlPasswordEnc = (service as any).mysqlPasswordEnc as string | null;
+    const mysqlPassword = mysqlPasswordEnc ? decryptString(mysqlPasswordEnc) : '';
     const mysqlBin = process.env.NPANEL_MYSQL_CMD || 'mysql';
-    let mysqlPath: string;
-    try {
-      mysqlPath = await this.tools.resolve(mysqlBin, { packageHint: 'mysql client' });
-    } catch (err) {
-      throw err;
-    }
+    const mysqlPath = await this.tools.resolve(mysqlBin, { packageHint: 'mysql client' });
     for (const dump of dumps) {
       const dbName = dump.name;
-      const createResult = await this.execRsync(mysqlPath, ['-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`]);
+      const createSql = `CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`;
+      const createResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, '-e', createSql]);
       if (createResult.code !== 0) {
         const errorWithDetails = new Error('db_create_failed') as Error & { details?: unknown };
         errorWithDetails.details = createResult;
         throw errorWithDetails;
       }
-      const importArgs = [dbName];
-      const importResult = await this.execRsync(mysqlPath, ['-D', dbName, '-e', `source ${dump.path}`]);
+      const importResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, dbName, '-e', `source ${dump.path}`]);
       if (importResult.code !== 0) {
         const errorWithDetails = new Error('db_import_failed') as Error & { details?: unknown };
         errorWithDetails.details = importResult;
         throw errorWithDetails;
       }
       const grantSql = `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${mysqlUsername}'@'localhost'; FLUSH PRIVILEGES;`;
-      const grantResult = await this.execRsync(mysqlPath, ['-e', grantSql]);
+      const grantResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, '-e', grantSql]);
       if (grantResult.code !== 0) {
         const errorWithDetails = new Error('db_grant_failed') as Error & { details?: unknown };
         errorWithDetails.details = grantResult;
@@ -816,7 +843,7 @@ export class MigrationService {
     if (!account) {
       throw new Error('Rsync step requires an account');
     }
-    const config: Record<string, unknown> = job.sourceConfig ?? {};
+    const config = this.getDecryptedConfig(job);
     const hostValue = config['host'];
     const sshUserValue = config['sshUser'];
     const sshPortValue = config['sshPort'];
@@ -869,13 +896,21 @@ export class MigrationService {
           typeof sourcePathValue === 'string' && sourcePathValue.length > 0
             ? sourcePathValue
             : this.resolveSourceHomePath(job, account);
-        const targetPathValue = payload['targetPath'];
-        const targetPath =
-          typeof targetPathValue === 'string' && targetPathValue.length > 0
-            ? targetPathValue
-            : this.resolveTargetHomePath(job, account);
+        // restore into actual service home
+        let targetPath: string;
+        if (account.targetServiceId) {
+          const svc = await this.hosting.get(account.targetServiceId);
+          const username = svc.systemUsername || (svc as any).systemUsername || `u_${(svc.primaryDomain.toLowerCase().split('.')[0] || 'site').replace(/[^a-z0-9]/g, '').slice(0, 8)}`;
+          targetPath = `/home/${username}`;
+        } else {
+          const targetPathValue = payload['targetPath'];
+          targetPath =
+            typeof targetPathValue === 'string' && targetPathValue.length > 0
+              ? (targetPathValue as string)
+              : this.resolveTargetHomePath(job, account);
+        }
         await mkdir(targetPath, { recursive: true });
-        const args: string[] = ['-az', '--delete'];
+        const args: string[] = ['-az'];
         if (job.dryRun) {
           args.push('--dry-run');
         }
@@ -1137,13 +1172,26 @@ export class MigrationService {
     message: string,
     context?: Record<string, any>,
   ): Promise<MigrationLog> {
+    const sanitized = this.sanitizeLogContext(context ?? null);
     const log = this.logs.create({
       job,
       account,
       level,
       message,
-      context: context ?? null,
+      context: sanitized,
     });
     return this.logs.save(log);
+  }
+
+  private sanitizeLogContext(context: Record<string, any> | null): Record<string, any> | null {
+    if (!context) return null;
+    const cloned: Record<string, any> = { ...context };
+    const redactKeys = ['password', 'sshPassword', 'sshKey', 'privateKey', 'secret'];
+    for (const k of Object.keys(cloned)) {
+      if (redactKeys.includes(k)) {
+        cloned[k] = '[REDACTED]';
+      }
+    }
+    return cloned;
   }
 }

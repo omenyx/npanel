@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, PanelLeft } from "lucide-react";
 import { requestJson } from "@/shared/api/api-client";
+import { clearSession, getStoredRole } from "@/shared/auth/session";
 
 type LoginResponse =
   | {
@@ -12,10 +13,6 @@ type LoginResponse =
         id: string;
         email: string;
         role: string;
-      };
-      tokens: {
-        accessToken: string;
-        refreshToken: string;
       };
     }
   | {
@@ -31,9 +28,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = window.localStorage.getItem("npanel_access_token");
-    if (token) {
-      router.replace("/admin");
+    const role = getStoredRole();
+    if (role) {
+      router.replace(role === "CUSTOMER" ? "/customer" : "/admin");
     }
   }, [router]);
 
@@ -42,6 +39,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
+      clearSession();
       const data = await requestJson<LoginResponse>("/v1/auth/login", {
         method: "POST",
         auth: false,
@@ -55,11 +53,9 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      window.localStorage.setItem("npanel_access_token", data.tokens.accessToken);
-      window.localStorage.setItem("npanel_refresh_token", data.tokens.refreshToken);
       window.localStorage.setItem("npanel_user_email", data.user.email);
       window.localStorage.setItem("npanel_user_role", data.user.role);
-      router.replace("/admin");
+      router.replace(data.user.role === "CUSTOMER" ? "/customer" : "/admin");
     } catch {
       setError("Unable to reach backend API");
       setLoading(false);

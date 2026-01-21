@@ -93,7 +93,7 @@ export default function ServiceDetails() {
         setFtp(ftpData);
         setDatabases(dbData.databases || []);
         setDnsRecords(dnsData.records || []);
-      } catch (err) {
+      } catch {
         router.push("/customer");
       } finally {
         setLoading(false);

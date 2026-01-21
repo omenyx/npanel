@@ -23,8 +23,8 @@ export class ActionIntentEntity {
   @Column()
   targetKey: string;
 
-  @Column({ type: 'json' })
-  payload: Record<string, unknown>;
+  @Column({ type: 'text' })
+  payload: string;
 
   @Column({ type: 'varchar', length: 16 })
   risk: 'low' | 'medium' | 'high';
@@ -35,7 +35,7 @@ export class ActionIntentEntity {
   @Column({ type: 'varchar', length: 16, default: 'prepared' })
   status: 'prepared' | 'confirmed' | 'cancelled' | 'expired';
 
-  @Column()
+  @Column({ type: 'varchar', length: 64 })
   token: string;
 
   @Column({ type: 'datetime' })
@@ -59,4 +59,3 @@ export class ActionIntentEntity {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

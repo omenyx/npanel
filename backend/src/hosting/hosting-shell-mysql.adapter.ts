@@ -79,6 +79,29 @@ export class ShellMysqlAdapter implements MysqlAdapter {
           });
           throw new Error('mysql_create_user_failed');
         }
+        const alterUserSql = `ALTER USER ${userIdent} IDENTIFIED BY '${escapeSqlString(
+          spec.password,
+        )}'`;
+        const alterUserResult = await execMysql(this.tools, alterUserSql);
+        if (alterUserResult.code !== 0) {
+          const fallbackSql = `ALTER USER ${userIdent} IDENTIFIED WITH mysql_native_password BY '${escapeSqlString(
+            spec.password,
+          )}'`;
+          const fallbackResult = await execMysql(this.tools, fallbackSql);
+          if (fallbackResult.code !== 0) {
+            await context.log({
+              adapter: 'mysql_shell',
+              operation: 'update',
+              targetKind: 'mysql_account',
+              targetKey: spec.username,
+              success: false,
+              dryRun: false,
+              details: {},
+              errorMessage: 'alter_user_failed',
+            });
+            throw new Error('mysql_alter_user_failed');
+          }
+        }
         for (const dbName of spec.databases) {
           const safeDb = assertSafeIdentifier(dbName);
           const createDbSql = `CREATE DATABASE IF NOT EXISTS \`${safeDb}\``;

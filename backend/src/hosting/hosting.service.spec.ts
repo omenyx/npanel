@@ -221,6 +221,94 @@ describe('HostingService provisioning', () => {
     expect(res.credentials.mailboxPassword).toBe('mailPass');
     expect(res.credentials.ftpPassword).toBe('ftpPass');
   });
+
+  it('resume continues from failed phase without regenerating credentials', async () => {
+    let webCalls = 0;
+    const web = {
+      ...adapter(),
+      ensureVhostPresent: async () => {
+        webCalls += 1;
+        if (webCalls === 1) throw new Error('vhost_failed');
+        return {};
+      },
+    };
+    service = new HostingService(
+      servicesRepo.r as any,
+      plansRepo.r as any,
+      adapter() as any,
+      web as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      logsRepo.r as any,
+      { generateDatabasePassword: () => 'mysqlPass', generateMailboxPassword: () => 'mailPass', generateFtpPassword: () => 'ftpPass' } as any,
+      {} as any,
+      tools() as any,
+    );
+
+    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow('vhost_failed');
+    const failed = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
+    expect(failed.status).toBe('error');
+    expect(failed.provisioningFailedPhase).toBe('web_vhost');
+    await expect(service.provision('svc1')).rejects.toThrow();
+    const encBefore = {
+      mysql: failed.mysqlPasswordEnc,
+      mail: failed.mailboxPasswordEnc,
+      ftp: failed.ftpPasswordEnc,
+    };
+
+    const resumed = await service.resumeProvision('svc1');
+    expect(resumed.status).toBe('active');
+    const after = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
+    expect(after.mysqlPasswordEnc).toBe(encBefore.mysql);
+    expect(after.mailboxPasswordEnc).toBe(encBefore.mail);
+    expect(after.ftpPasswordEnc).toBe(encBefore.ftp);
+  });
+
+  it('retry is destructive and regenerates credentials', async () => {
+    let passN = 0;
+    const creds = {
+      generateDatabasePassword: () => `mysqlPass${(passN += 1)}`,
+      generateMailboxPassword: () => `mailPass${passN}`,
+      generateFtpPassword: () => `ftpPass${passN}`,
+    };
+    let webCalls = 0;
+    const web = {
+      ...adapter(),
+      ensureVhostPresent: async () => {
+        webCalls += 1;
+        if (webCalls === 1) throw new Error('vhost_failed');
+        return {};
+      },
+    };
+    service = new HostingService(
+      servicesRepo.r as any,
+      plansRepo.r as any,
+      adapter() as any,
+      web as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      adapter() as any,
+      logsRepo.r as any,
+      creds as any,
+      {} as any,
+      tools() as any,
+    );
+
+    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow('vhost_failed');
+    const failed = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
+    const encBefore = failed.mysqlPasswordEnc;
+
+    const retried = await service.retryProvision('svc1');
+    expect(retried.status).toBe('active');
+    const after = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
+    expect(after.mysqlPasswordEnc).toBeTruthy();
+    expect(after.mysqlPasswordEnc).not.toBe(encBefore);
+  });
 });
 
 describe('HostingService create', () => {

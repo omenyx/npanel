@@ -33,12 +33,34 @@ export class CustomerMigrationController {
   ) {}
 
   private async getCustomerForUser(req: any) {
+    const impersonatedCustomerId = req.user?.impersonation?.customerId ?? null;
+    if (impersonatedCustomerId) {
+      return this.accounts.get(impersonatedCustomerId);
+    }
     const userId = req.user.id;
     const customer = await this.accounts.findByOwnerUserId(userId);
     if (!customer) {
       throw new UnauthorizedException('No customer account linked to user');
     }
     return customer;
+  }
+
+  private getActor(req: any, reason?: string) {
+    const imp = req.user?.impersonation ?? null;
+    if (imp?.active) {
+      return {
+        actorId: imp.adminId,
+        actorRole: 'ADMIN',
+        actorType: 'impersonation',
+        reason: typeof reason === 'string' ? reason : undefined,
+      };
+    }
+    return {
+      actorId: req.user?.id,
+      actorRole: 'CUSTOMER',
+      actorType: 'customer',
+      reason: typeof reason === 'string' ? reason : undefined,
+    };
   }
 
   @Post()
@@ -134,7 +156,7 @@ export class CustomerMigrationController {
   @HttpCode(HttpStatus.OK)
   async prepareCreateJob(@Req() req: any, @Body() body: CreateMigrationJobDto & { reason?: string }) {
     const customer = await this.getCustomerForUser(req);
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'migrations',
       action: 'create_migration_job',
@@ -152,7 +174,7 @@ export class CustomerMigrationController {
   @HttpCode(HttpStatus.OK)
   async confirmCreateJob(@Req() req: any, @Body() body: { intentId: string; token: string }) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'create_migration_job', status: 'SUCCESS' }];
@@ -181,7 +203,7 @@ export class CustomerMigrationController {
     await this.migrations.getJobForCustomer(customer.id, id);
     const service = await this.hosting.get(body.targetServiceId);
     if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'migrations',
       action: 'add_migration_account',
@@ -199,7 +221,7 @@ export class CustomerMigrationController {
   @HttpCode(HttpStatus.OK)
   async confirmAddAccount(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.id !== id || payload?.targetCustomerId !== customer.id) throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'add_migration_account', status: 'SUCCESS' }];
@@ -229,7 +251,7 @@ export class CustomerMigrationController {
   async preparePlan(@Req() req: any, @Param('id') id: string, @Body() body: { reason?: string }) {
     const customer = await this.getCustomerForUser(req);
     await this.migrations.getJobForCustomer(customer.id, id);
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'migrations',
       action: 'plan_migration',
@@ -247,7 +269,7 @@ export class CustomerMigrationController {
   @HttpCode(HttpStatus.OK)
   async confirmPlan(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.id !== id || payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'plan_migration', status: 'SUCCESS' }];
@@ -272,7 +294,7 @@ export class CustomerMigrationController {
   async prepareRunNext(@Req() req: any, @Param('id') id: string, @Body() body: { reason?: string }) {
     const customer = await this.getCustomerForUser(req);
     await this.migrations.getJobForCustomer(customer.id, id);
-    const actor = { actorId: req.user.id, actorRole: 'CUSTOMER', actorType: 'customer', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'migrations',
       action: 'run_next_step',
@@ -290,7 +312,7 @@ export class CustomerMigrationController {
   @HttpCode(HttpStatus.OK)
   async confirmRunNext(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
     const payload = intent.payload as any;
     if (payload?.id !== id || payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'run_next_step', status: 'SUCCESS' }];

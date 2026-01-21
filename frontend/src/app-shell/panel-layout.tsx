@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/app-shell/sidebar";
 import { Topbar } from "@/app-shell/topbar";
 import type { NavSection, PanelRole } from "@/app-shell/types";
-import { getAccessToken } from "@/shared/api/api-client";
-import { clearSession, getStoredRole } from "@/shared/auth/session";
+import { requestJson } from "@/shared/api/api-client";
+import {
+  clearSession,
+  exitImpersonation,
+  getImpersonationContext,
+  getStoredRole,
+  isImpersonating,
+} from "@/shared/auth/session";
 
 type PanelLayoutProps = {
   brand: React.ReactNode;
@@ -25,13 +31,11 @@ export function PanelLayout({
   const [authorized, setAuthorized] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
+  const [impersonation, setImpersonation] = React.useState(
+    getImpersonationContext(),
+  );
 
   React.useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
     if (allowedRoles && allowedRoles.length > 0) {
       const role = getStoredRole();
       if (!role || !allowedRoles.includes(role)) {
@@ -47,6 +51,25 @@ export function PanelLayout({
     clearSession();
     router.push("/login");
   }, [router]);
+
+  const handleExitImpersonation = React.useCallback(async () => {
+    try {
+      if (isImpersonating()) {
+        await requestJson("/v1/auth/impersonation/end", { method: "POST" });
+      }
+    } catch {
+    } finally {
+      exitImpersonation();
+      setImpersonation(null);
+      router.replace("/admin");
+    }
+  }, [router]);
+
+  React.useEffect(() => {
+    const onStorage = () => setImpersonation(getImpersonationContext());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const openMobileMenu = React.useCallback(() => setMobileOpen(true), []);
   const toggleCollapsed = React.useCallback(() => setCollapsed((v) => !v), []);
@@ -77,7 +100,31 @@ export function PanelLayout({
           onLogout={handleLogout}
         />
         <main className="flex-1 overflow-y-auto bg-background p-4 md:p-8">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <div className="mx-auto max-w-6xl">
+            {impersonation && (
+              <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-text-main">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="font-medium">
+                      You are impersonating this customer as ADMIN
+                    </div>
+                    <div className="text-xs text-text-muted">
+                      Admin: {impersonation.adminEmail} • Customer:{" "}
+                      {impersonation.customerEmail} • Expires:{" "}
+                      {new Date(impersonation.expiresAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleExitImpersonation}
+                    className="btn-secondary"
+                  >
+                    Exit impersonation
+                  </button>
+                </div>
+              </div>
+            )}
+            {children}
+          </div>
         </main>
       </div>
     </div>

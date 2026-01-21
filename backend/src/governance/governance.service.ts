@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { randomBytes } from 'node:crypto';
+import { Repository, LessThan } from 'typeorm';
+import { randomBytes, createHash } from 'node:crypto';
 import { ActionIntentEntity } from './action-intent.entity';
 import { AuditLogEntity } from './audit-log.entity';
+import { encryptString, decryptString } from '../system/secretbox';
 
 export type GovernanceActor = {
   actorId?: string;
@@ -62,17 +63,20 @@ export class GovernanceService {
     actor?: GovernanceActor;
   }): Promise<ActionConfirmation> {
     const token = randomBytes(24).toString('hex');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
     const tokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    // opportunistic TTL cleanup for previously expired/confirmed intents
+    await this.cleanupIntents();
     const intent = await this.intents.save({
       module: input.module,
       action: input.action,
       targetKind: input.targetKind,
       targetKey: input.targetKey,
-      payload: input.payload,
+      payload: encryptString(JSON.stringify(input.payload ?? {})),
       risk: input.risk,
       reversibility: input.reversibility,
       status: 'prepared',
-      token,
+      token: tokenHash,
       tokenExpiresAt,
       actorId: input.actor?.actorId ?? null,
       actorRole: input.actor?.actorRole ?? null,
@@ -118,14 +122,33 @@ export class GovernanceService {
   }
 
   async verify(intentId: string, token: string): Promise<ActionIntentEntity> {
+    return this.verifyWithActor(intentId, token);
+  }
+
+  async verifyWithActor(
+    intentId: string,
+    token: string,
+    expectedActor?: GovernanceActor,
+  ): Promise<ActionIntentEntity> {
     const intent = await this.intents.findOne({ where: { id: intentId } });
     if (!intent) throw new NotFoundException('Action intent not found');
     if (intent.status !== 'prepared') throw new BadRequestException('Action intent is not pending confirmation');
-    if (intent.token !== token) throw new BadRequestException('Invalid confirmation token');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    if (intent.token !== tokenHash) throw new BadRequestException('Invalid confirmation token');
+    if (expectedActor?.actorId && intent.actorId && intent.actorId !== expectedActor.actorId) {
+      throw new BadRequestException('Action intent actor mismatch');
+    }
     if (intent.tokenExpiresAt.getTime() < Date.now()) {
       intent.status = 'expired';
       await this.intents.save(intent as any);
       throw new BadRequestException('Confirmation token expired');
+    }
+    // decrypt payload in-memory for downstream usage
+    try {
+      const decrypted = decryptString(intent.payload);
+      (intent as any).payload = JSON.parse(decrypted);
+    } catch {
+      (intent as any).payload = {};
     }
     return intent;
   }
@@ -138,6 +161,8 @@ export class GovernanceService {
     errorMessage?: string | null;
   }): Promise<ActionResultEnvelope> {
     input.intent.status = 'confirmed';
+    input.intent.token = 'used';
+    input.intent.payload = '';
     await this.intents.save(input.intent as any);
     const outcome =
       input.status === 'SUCCESS' ? 'success' : input.status === 'PARTIAL_SUCCESS' ? 'partial' : 'failed';
@@ -165,5 +190,12 @@ export class GovernanceService {
       result: input.result,
     };
   }
-}
 
+  private async cleanupIntents(): Promise<void> {
+    const now = Date.now();
+    const expiredCutoff = new Date(now - 24 * 60 * 60 * 1000); // 24h for expired
+    const confirmedCutoff = new Date(now - 7 * 24 * 60 * 60 * 1000); // 7d for confirmed
+    await this.intents.delete({ status: 'expired', updatedAt: LessThan(expiredCutoff) } as any);
+    await this.intents.delete({ status: 'confirmed', updatedAt: LessThan(confirmedCutoff) } as any);
+  }
+}

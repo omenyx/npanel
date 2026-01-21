@@ -26,7 +26,6 @@ type HostingService = {
 export function AdminPackagesScreen() {
   const [plans, setPlans] = useState<HostingPlan[]>([]);
   const [services, setServices] = useState<HostingService[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
@@ -50,7 +49,6 @@ export function AdminPackagesScreen() {
   >(null);
 
   const fetchData = async () => {
-    setLoading(true);
     const token = getAccessToken();
     if (!token) return;
 
@@ -61,10 +59,8 @@ export function AdminPackagesScreen() {
       ]);
       setPlans(plansData);
       setServices(servicesData);
-    } catch (err) {
+    } catch {
       setError("Failed to load data");
-    } finally {
-      setLoading(false);
     }
   };
 

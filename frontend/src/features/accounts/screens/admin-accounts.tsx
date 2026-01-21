@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Users, Play, Pause, Trash2, Plus } from "lucide-react";
-import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import { Users, Play, Pause, Trash2, Plus, RotateCcw, LogIn } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { requestJson } from "@/shared/api/api-client";
 import { normalizeToolStatusList } from "@/shared/api/system-status";
 import {
   GovernedActionDialog,
   type GovernedConfirmation,
 } from "@/shared/ui/governed-action-dialog";
+import { startImpersonation, type ImpersonationContext } from "@/shared/auth/session";
 
 type Customer = {
   id: string;
@@ -22,6 +24,13 @@ type HostingService = {
   primaryDomain: string;
   planName: string | null;
   status: string;
+  provisioningPhase?: string | null;
+  provisioningCompletedPhasesJson?: string | null;
+  provisioningFailedPhase?: string | null;
+  provisioningErrorJson?: string | null;
+  provisioningUpdatedAt?: string | null;
+  systemUsername?: string | null;
+  mysqlUsername?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -44,7 +53,18 @@ type HostingLogEntry = {
   createdAt: string;
 };
 
+type StartImpersonationResponse =
+  | {
+      ok: true;
+      impersonation: ImpersonationContext;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export function AdminAccountsScreen() {
+  const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [services, setServices] = useState<HostingService[]>([]);
   const [plans, setPlans] = useState<HostingPlan[]>([]);
@@ -87,6 +107,28 @@ export function AdminAccountsScreen() {
     ((intentId: string, token: string) => Promise<any>) | null
   >(null);
 
+  const impersonateCustomer = (customerId: string) => async () => {
+    setError(null);
+    try {
+      const res = await requestJson<StartImpersonationResponse>(
+        "/v1/auth/impersonation/start",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customerId }),
+        },
+      );
+      if (!res.ok) {
+        setError("Impersonation failed");
+        return;
+      }
+      startImpersonation({ impersonation: res.impersonation });
+      router.replace("/customer");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impersonation failed");
+    }
+  };
+
   useEffect(() => {
     let timer: any;
     if (terminateExpiresAt) {
@@ -107,17 +149,12 @@ export function AdminAccountsScreen() {
   }, [terminateExpiresAt]);
 
   const refreshSingleService = async (id: string) => {
-    const token = getAccessToken();
-    if (!token) return;
     const updated = await requestJson<HostingService>(`/v1/hosting/services/${id}`);
     setServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
   };
 
   useEffect(() => {
     const fetchData = async () => {
-      const token = getAccessToken();
-      if (!token) return;
-
       try {
         const [customersData, servicesData, plansData, toolsData] = await Promise.all([
           requestJson<Customer[]>("/v1/customers"),
@@ -238,6 +275,8 @@ export function AdminAccountsScreen() {
         const createdService = payload?.service ?? payload;
         if (createdService?.id) {
           setServices((prev) => [createdService, ...prev.filter((s) => s.id !== createdService.id)]);
+          setProvisionServiceId(createdService.id);
+          startLogPolling(createdService.id);
         }
         if (payload?.credentials && createdService?.id) {
           setCreationCredentials(payload);
@@ -293,6 +332,26 @@ export function AdminAccountsScreen() {
       }
     };
 
+  const resumeProvision =
+    (id: string) => async () => {
+      setError(null);
+      setServiceActionId(id);
+      setServiceActionLabel("Resuming");
+      try {
+        await requestJson<any>(`/v1/hosting/services/${id}/resume-provision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        await refreshSingleService(id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Resume failed");
+      } finally {
+        setServiceActionId(null);
+        setServiceActionLabel(null);
+      }
+    };
+
   const openDetails = (id: string) => {
     setDetailsServiceId(id);
     setShowDetailsModal(true);
@@ -300,9 +359,11 @@ export function AdminAccountsScreen() {
 
   const buildDetailsText = (svc: HostingService) => {
     const customer = customers.find((c) => c.id === svc.customerId);
-    const username = `u_${(svc.primaryDomain.toLowerCase().split(".")[0] || "site")
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 8) || "site"}`;
+    const username =
+      svc.systemUsername ||
+      `u_${(svc.primaryDomain.toLowerCase().split(".")[0] || "site")
+        .replace(/[^a-z0-9]/g, "")
+        .slice(0, 8) || "site"}`;
     const lines = [
       `Account Details`,
       `Domain: ${svc.primaryDomain}`,
@@ -350,16 +411,13 @@ export function AdminAccountsScreen() {
     if (!terminateServiceId || !terminateToken) return;
     setError(null);
     try {
-      const payload = await requestJson<any>(
-        `/v1/hosting/services/${terminateServiceId}/terminate/confirm`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ token: terminateToken, purge: true }),
+      await requestJson<any>(`/v1/hosting/services/${terminateServiceId}/terminate/confirm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ token: terminateToken, purge: true }),
+      });
       setShowTerminateModal(false);
       setTerminateServiceId(null);
       setTerminateToken(null);
@@ -641,6 +699,17 @@ export function AdminAccountsScreen() {
               ) : (
                 services.map((s) => {
                   const isBusy = serviceActionId === s.id;
+                  const phaseText =
+                    typeof s.provisioningFailedPhase === "string" && s.provisioningFailedPhase.length > 0
+                      ? `FAILED @ ${s.provisioningFailedPhase}`
+                      : typeof s.provisioningPhase === "string" && s.provisioningPhase.length > 0
+                        ? `PHASE: ${s.provisioningPhase}`
+                        : null;
+                  const canResume =
+                    s.status === "error" &&
+                    typeof s.provisioningFailedPhase === "string" &&
+                    s.provisioningFailedPhase.length > 0;
+                  const canStartProvision = s.status === "provisioning" && !canResume;
                   return (
                     <tr key={s.id} className="table-row">
                       <td className="px-4 py-3 font-medium text-text-main">{s.primaryDomain}</td>
@@ -668,13 +737,36 @@ export function AdminAccountsScreen() {
                         >
                           {isBusy ? serviceActionLabel : s.status}
                         </span>
+                        {phaseText && (
+                          <div className="text-[10px] mt-1 text-text-muted">{phaseText}</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "-"}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {(s.status === "provisioning" || s.status === "error") && (
+                          {canResume && (
+                            <button
+                              onClick={resumeProvision(s.id)}
+                              disabled={isBusy}
+                              className="p-1.5 text-primary hover:bg-primary/10 rounded disabled:opacity-50"
+                              title="Resume"
+                            >
+                              <Play className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canResume && (
+                            <button
+                              onClick={withServiceAction(s.id, "Retrying", "retry-provision")}
+                              disabled={isBusy}
+                              className="p-1.5 text-danger hover:bg-danger/10 rounded disabled:opacity-50"
+                              title="Retry (destructive)"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canStartProvision && (
                             <button
                               onClick={withServiceAction(s.id, "Provisioning", "provision")}
                               disabled={isBusy}
@@ -741,6 +833,14 @@ export function AdminAccountsScreen() {
                             title="Account Details"
                           >
                             Details
+                          </button>
+                          <button
+                            onClick={impersonateCustomer(s.customerId)}
+                            disabled={isBusy}
+                            className="p-1.5 text-primary hover:bg-primary/10 rounded disabled:opacity-50"
+                            title="Login as Customer"
+                          >
+                            <LogIn className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -835,8 +935,6 @@ export function AdminAccountsScreen() {
                           setSettingCredentials(true);
                           setError(null);
                           try {
-                            const token = getAccessToken();
-                            if (!token) return;
                             const payload = await requestJson<any>(
                               `/v1/hosting/services/${svc.id}/credentials/init`,
                               {
@@ -852,7 +950,7 @@ export function AdminAccountsScreen() {
                                 ftpPassword: payload.ftpPassword,
                               },
                             });
-                          } catch (e) {
+                          } catch {
                             setError("Failed to set credentials");
                           } finally {
                             setSettingCredentials(false);

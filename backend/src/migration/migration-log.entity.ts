@@ -13,10 +13,10 @@ export class MigrationLog {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => MigrationJob, { onDelete: 'CASCADE' })
+  @ManyToOne(() => MigrationJob, { onDelete: 'SET NULL', nullable: true })
   job: MigrationJob;
 
-  @ManyToOne(() => MigrationAccount, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => MigrationAccount, { nullable: true, onDelete: 'SET NULL' })
   account: MigrationAccount | null;
 
   @Column({ type: 'varchar', length: 16 })

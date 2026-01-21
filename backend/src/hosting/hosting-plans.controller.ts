@@ -66,8 +66,9 @@ export class HostingPlansController {
 
   @Post('confirm-create')
   @HttpCode(HttpStatus.OK)
-  async confirmCreate(@Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmCreate(@Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const steps: ActionStep[] = [{ name: 'create_plan', status: 'SUCCESS' }];
     try {
       const result = await this.hosting.createPlan(intent.payload as any);
@@ -98,8 +99,9 @@ export class HostingPlansController {
 
   @Post(':name/confirm-delete')
   @HttpCode(HttpStatus.OK)
-  async confirmDelete(@Param('name') name: string, @Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async confirmDelete(@Param('name') name: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
+    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     if (intent.targetKey !== name) {
       throw new Error('Intent target mismatch');
     }

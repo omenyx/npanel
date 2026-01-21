@@ -3,12 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './user.entity';
+import { AuthLoginEvent, LoginType } from './auth-login-event.entity';
 
 @Injectable()
 export class IamService {
   constructor(
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    @InjectRepository(AuthLoginEvent)
+    private readonly loginEvents: Repository<AuthLoginEvent>,
   ) {}
 
   async hasAnyUser(): Promise<boolean> {
@@ -82,5 +85,71 @@ export class IamService {
     }
     user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await this.users.save(user);
+  }
+
+  async recordLoginEvent(input: {
+    loginType: LoginType;
+    sessionId: string;
+    userId: string;
+    userEmail: string;
+    userRole: string;
+    customerId: string | null;
+    impersonatorId?: string | null;
+    impersonatorEmail?: string | null;
+    sourceIp: string | null;
+    userAgent: string | null;
+    expiresAt: Date | null;
+  }): Promise<AuthLoginEvent> {
+    const entity = this.loginEvents.create({
+      loginType: input.loginType,
+      sessionId: input.sessionId,
+      userId: input.userId,
+      userEmail: input.userEmail,
+      userRole: input.userRole,
+      customerId: input.customerId,
+      impersonatorId: input.impersonatorId ?? null,
+      impersonatorEmail: input.impersonatorEmail ?? null,
+      sourceIp: input.sourceIp,
+      userAgent: input.userAgent,
+      expiresAt: input.expiresAt,
+      logoutAt: null,
+    });
+    return this.loginEvents.save(entity);
+  }
+
+  async endSession(sessionId: string): Promise<boolean> {
+    const event = await this.loginEvents.findOne({ where: { sessionId } });
+    if (!event) return false;
+    if (event.logoutAt) return true;
+    event.logoutAt = new Date();
+    await this.loginEvents.save(event);
+    return true;
+  }
+
+  async getActiveImpersonationSession(sessionId: string): Promise<AuthLoginEvent | null> {
+    const event = await this.loginEvents.findOne({ where: { sessionId } });
+    if (!event) return null;
+    if (event.loginType !== 'impersonation') return null;
+    if (event.logoutAt) return null;
+    if (event.expiresAt && event.expiresAt.getTime() <= Date.now()) return null;
+    return event;
+  }
+
+  async listLoginEventsForCustomer(customerId: string, limit: number): Promise<AuthLoginEvent[]> {
+    const take = Math.max(1, Math.min(200, limit));
+    return this.loginEvents.find({
+      where: { customerId },
+      order: { loginAt: 'DESC' },
+      take,
+    });
+  }
+
+  async listLoginEventsForUser(userId: string, limit: number): Promise<AuthLoginEvent[]> {
+    const take = Math.max(1, Math.min(200, limit));
+    return this.loginEvents.find({
+      where: { userId },
+      order: { loginAt: 'DESC' },
+      take,
+    });
   }
 }

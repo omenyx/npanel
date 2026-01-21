@@ -1,11 +1,9 @@
 import {
   Activity,
-  BarChart3,
-  Database,
   FileText,
-  Folder,
   Globe,
   KeyRound,
+  LogIn,
   LayoutDashboard,
   Package,
   Server,
@@ -13,7 +11,6 @@ import {
   Users,
   Webhook,
   ArrowRightLeft,
-  Mail,
 } from "lucide-react";
 import type { NavSection } from "@/app-shell/types";
 
@@ -32,8 +29,8 @@ export const adminNavSections: NavSection[] = [
     ],
   },
   {
-    key: "hosting",
-    label: "Hosting",
+    key: "account-admin",
+    label: "Account Administration",
     items: [
       {
         key: "accounts",
@@ -43,31 +40,10 @@ export const adminNavSections: NavSection[] = [
         roles: ["ADMIN"],
       },
       {
-        key: "domains",
-        label: "Domains",
-        href: "/admin/dns",
-        icon: Globe,
-        roles: ["ADMIN"],
-      },
-      {
-        key: "email",
-        label: "Email",
-        href: "/admin/email",
-        icon: Mail,
-        roles: ["ADMIN"],
-      },
-      {
-        key: "databases",
-        label: "Databases",
-        href: "/admin/databases",
-        icon: Database,
-        roles: ["ADMIN"],
-      },
-      {
-        key: "files",
-        label: "Files",
-        href: "/admin/files",
-        icon: Folder,
+        key: "impersonate",
+        label: "Login as Customer",
+        href: "/admin/accounts",
+        icon: LogIn,
         roles: ["ADMIN"],
       },
     ],
@@ -87,7 +63,7 @@ export const adminNavSections: NavSection[] = [
         key: "metrics",
         label: "Metrics & Logs",
         href: "/admin/metrics",
-        icon: BarChart3,
+        icon: Activity,
         roles: ["ADMIN"],
       },
       {
@@ -108,7 +84,7 @@ export const adminNavSections: NavSection[] = [
   },
   {
     key: "system",
-    label: "System",
+    label: "Server & Infrastructure",
     items: [
       {
         key: "server",
@@ -118,8 +94,15 @@ export const adminNavSections: NavSection[] = [
         roles: ["ADMIN"],
       },
       {
+        key: "dns-zones",
+        label: "DNS Zones",
+        href: "/admin/dns",
+        icon: Globe,
+        roles: ["ADMIN"],
+      },
+      {
         key: "packages",
-        label: "Packages",
+        label: "Packages / Plans",
         href: "/admin/packages",
         icon: Package,
         roles: ["ADMIN"],
@@ -140,7 +123,7 @@ export const adminNavSections: NavSection[] = [
       },
       {
         key: "access",
-        label: "Access",
+        label: "Access / Roles",
         href: "/admin/access",
         icon: KeyRound,
         roles: ["ADMIN"],
@@ -148,4 +131,3 @@ export const adminNavSections: NavSection[] = [
     ],
   },
 ];
-

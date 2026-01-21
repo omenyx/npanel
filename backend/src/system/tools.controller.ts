@@ -210,8 +210,9 @@ export class ToolsController {
   }
 
   @Post('restart-service/confirm')
-  async restartServiceConfirm(@Body() body: { intentId: string; token: string }) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+  async restartServiceConfirm(@Body() body: { intentId: string; token: string }, @Req() req: any) {
+    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const serviceName = (intent.payload as any)?.service as string;
     const steps: ActionStep[] = [
       { name: 'systemctl_restart', status: 'SKIPPED' },

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Server, ExternalLink, HardDrive, Database, Mail } from "lucide-react";
-import { getAccessToken, requestJson } from "@/shared/api/api-client";
+import { requestJson } from "@/shared/api/api-client";
 
 interface PlanLimits {
   diskQuotaMb: number;
@@ -34,11 +34,9 @@ export default function CustomerDashboard() {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const token = getAccessToken();
-        if (!token) return;
-        const data = await requestJson<HostingService[]>("/v1/customer/hosting/services");
+        const data = await requestJson<HostingService>("/v1/customer/hosting/services");
         setServices(data);
-      } catch (err) {
+      } catch {
         return;
       } finally {
         setLoading(false);

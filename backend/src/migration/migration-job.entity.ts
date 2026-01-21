@@ -27,8 +27,8 @@ export class MigrationJob {
   @Column({ type: 'varchar', length: 32 })
   status: MigrationJobStatus;
 
-  @Column({ type: 'json', nullable: true })
-  sourceConfig: Record<string, any> | null;
+  @Column({ type: 'text', nullable: true })
+  sourceConfig: string | null;
 
   @Column({ type: 'boolean', default: false })
   dryRun: boolean;

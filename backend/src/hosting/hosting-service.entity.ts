@@ -29,6 +29,36 @@ export class HostingServiceEntity {
     | 'terminated'
     | 'error';
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  provisioningPhase: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  provisioningCompletedPhasesJson: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  provisioningFailedPhase: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  provisioningErrorJson: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  provisioningUpdatedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  systemUsername: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  mysqlUsername: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  mysqlPasswordEnc: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  mailboxPasswordEnc: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  ftpPasswordEnc: string | null;
+
   @Column({ type: 'datetime', nullable: true })
   softDeletedAt: Date | null;
 

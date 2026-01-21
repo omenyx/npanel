@@ -84,7 +84,8 @@ export class AccountsController {
     @Req() req: Request & { user?: { id?: string } },
     @Body() body: { intentId: string; token: string },
   ) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const ownerUserId = req.user?.id ?? '';
     const steps: ActionStep[] = [{ name: 'create_customer', status: 'SUCCESS' }];
     try {
@@ -121,10 +122,12 @@ export class AccountsController {
   @Post(':id/confirm-update')
   @HttpCode(HttpStatus.OK)
   async confirmUpdate(
+    @Req() req: Request & { user?: { id?: string } },
     @Param('id') id: string,
     @Body() body: { intentId: string; token: string },
   ) {
-    const intent = await this.governance.verify(body.intentId, body.token);
+    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
+    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
     const payload = intent.payload as any;
     if (payload?.id !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'update_customer', status: 'SUCCESS' }];
