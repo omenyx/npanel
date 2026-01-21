@@ -1793,7 +1793,7 @@ server {
 
     # Customer panel - everything goes here
     location / {
-        proxy_pass http://npanel_frontend/customer;
+        proxy_pass http://npanel_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1840,7 +1840,7 @@ server {
 
     # Customer panel - everything goes here
     location / {
-        proxy_pass http://npanel_frontend/customer;
+        proxy_pass http://npanel_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1878,9 +1878,9 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Admin panel - everything goes here
+    # Admin panel - everything else goes to frontend (let middleware route)
     location / {
-        proxy_pass http://npanel_frontend/admin;
+        proxy_pass http://npanel_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1927,7 +1927,7 @@ server {
 
     # Admin panel - everything goes here
     location / {
-        proxy_pass http://npanel_frontend/admin;
+        proxy_pass http://npanel_frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
