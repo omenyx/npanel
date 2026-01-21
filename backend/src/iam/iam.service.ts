@@ -35,8 +35,26 @@ export class IamService {
     return this.users.save(entity);
   }
 
-  async validateUser(email: string, password: string): Promise<User | null> {
-    const user = await this.users.findOne({ where: { email } });
+  async validateUser(emailOrUsername: string, password: string): Promise<User | null> {
+    // Support root username login (no email format required)
+    if (emailOrUsername.toLowerCase() === 'root') {
+      const rootPassword = process.env.NPANEL_ROOT_PASSWORD;
+      if (rootPassword && password === rootPassword) {
+        // Return a virtual root user
+        return {
+          id: 'system-root',
+          email: 'root@system.local',
+          passwordHash: '',
+          role: 'ADMIN' as const,
+          tokenVersion: 0,
+          createdAt: new Date(),
+        };
+      }
+      return null;
+    }
+
+    // Standard email-based user authentication
+    const user = await this.users.findOne({ where: { email: emailOrUsername } });
     if (!user) {
       return null;
     }

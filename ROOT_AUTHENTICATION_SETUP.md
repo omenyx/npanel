@@ -2,25 +2,45 @@
 
 ## Current Authentication System
 
-Npanel uses email-based authentication with the following structure:
-- Users are stored in the `iam_users` table with email and password hash
-- Login requires an email and password
+Npanel now supports both email-based and username-based authentication:
+- Regular users are stored in the `iam_users` table with email and password hash
+- **NEW**: Root user can login with just username "root" (no email format required)
 - User roles: ADMIN, RESELLER, CUSTOMER, SUPPORT
 
 ## How to Enable Root Login
 
-### Option 1: Create a Root User via API (Recommended)
+### Option 1: System Root Username Authentication (RECOMMENDED & NOW IMPLEMENTED)
 
-The simplest way to enable root authentication is to create an admin user during initialization:
+Login using just the username "root" without email format:
 
 ```bash
-# During first installation, the installer will prompt for admin credentials
-# Or you can call the initialization API:
+# Set the root password in environment
+export NPANEL_ROOT_PASSWORD="your-secure-root-password"
 
+# Login with username 'root'
+curl -X POST http://localhost:3000/v1/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "root",
+    "password": "your-secure-root-password"
+  }'
+```
+
+**This is now the default implementation!** The code has been updated to:
+- Accept "root" as a username (not requiring email format)
+- Check against `NPANEL_ROOT_PASSWORD` environment variable
+- Create a virtual ADMIN user with ID "system-root"
+- Work without requiring a database entry
+
+### Option 2: Create a Root User via API
+
+Create an admin user during initialization (uses email format):
+
+```bash
 curl -X POST http://localhost:3000/v1/install/init/prepare \
   -H "Content-Type: application/json" \
   -d '{
-    "adminEmail": "root@localhost",
+    "adminEmail": "admin@localhost",
     "adminPassword": "your-secure-password"
   }'
 
@@ -38,46 +58,32 @@ Then login with:
 curl -X POST http://localhost:3000/v1/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "root@localhost",
+    "email": "admin@localhost",
     "password": "your-secure-password"
   }'
 ```
 
-### Option 2: Modify validateUser() for System Root
+### Option 3: Direct Database User Creation
 
-To allow system root authentication without a database user, modify `iam.service.ts`:
+Connect to the database and create a user directly:
 
-```typescript
-async validateUser(email: string, password: string): Promise<User | null> {
-  // Allow system root authentication
-  if (email === 'root' && password === process.env.NPANEL_ROOT_PASSWORD) {
-    // Create a virtual root user
-    return {
-      id: 'system-root',
-      email: 'root',
-      passwordHash: '', // Not used for system root
-      role: 'ADMIN' satisfies UserRole,
-      tokenVersion: 0,
-      createdAt: new Date(),
-    } as User;
-  }
-
-  // Standard database user authentication
-  const user = await this.users.findOne({ where: { email } });
-  if (!user) {
-    return null;
-  }
-
-  const match = await bcrypt.compare(password, user.passwordHash);
-  if (!match) {
-    return null;
-  }
-
-  return user;
-}
+```sql
+-- MySQL/MariaDB
+INSERT INTO iam_users (id, email, passwordHash, role, tokenVersion, createdAt)
+VALUES (
+  UUID(),
+  'admin@localhost',
+  '$2a$12$HASH_HERE',  -- bcrypt hash of your password
+  'ADMIN',
+  0,
+  NOW()
+);
 ```
 
-Then set the environment variable:
+To generate a bcrypt hash from command line:
+```bash
+node -e "console.log(require('bcryptjs').hashSync('your-password', 12))"
+```
 ```bash
 export NPANEL_ROOT_PASSWORD="your-root-password"
 ```
@@ -105,76 +111,122 @@ To generate a bcrypt hash from command line:
 node -e "console.log(require('bcryptjs').hashSync('your-password', 12))"
 ```
 
-## Current Code Structure
+## Code Changes Made
 
-### Key Files:
-- **Backend Service**: `backend/src/iam/iam.service.ts`
-  - `validateUser()`: Email + password validation
-  - `createInitialAdmin()`: Creates first admin user
-  
-- **Controller**: `backend/src/iam/iam.controller.ts`
-  - `login()`: POST /v1/login endpoint
-  - `initializePrepare()`, `initializeConfirm()`: Bootstrap flow
+### 1. Updated LoginDto (`backend/src/iam/dto/login.dto.ts`)
+Changed `@IsEmail()` validator to `@IsString()` to accept both email and username formats:
 
-- **User Entity**: `backend/src/iam/user.entity.ts`
-  - `email`: unique identifier
-  - `passwordHash`: bcrypt hash
-  - `role`: user role (ADMIN, RESELLER, CUSTOMER, SUPPORT)
+```typescript
+import { IsString } from 'class-validator';
 
-### Authentication Flow:
-1. User sends email + password to `/v1/login`
-2. `IamService.validateUser()` checks database
-3. Returns user if credentials match
-4. JwtService creates access + refresh tokens
-5. Tokens sent as HTTP-only cookies
-6. Client authenticated for subsequent requests
+export class LoginDto {
+  @IsString()
+  email: string; // Can be email format (user@domain) or username (e.g., 'root')
+
+  @IsString()
+  password: string;
+}
+```
+
+### 2. Updated IamService (`backend/src/iam/iam.service.ts`)
+Modified `validateUser()` to support username-based root login:
+
+```typescript
+async validateUser(emailOrUsername: string, password: string): Promise<User | null> {
+  // Support root username login (no email format required)
+  if (emailOrUsername.toLowerCase() === 'root') {
+    const rootPassword = process.env.NPANEL_ROOT_PASSWORD;
+    if (rootPassword && password === rootPassword) {
+      // Return a virtual root user
+      return {
+        id: 'system-root',
+        email: 'root@system.local',
+        passwordHash: '',
+        role: 'ADMIN' as const,
+        tokenVersion: 0,
+        createdAt: new Date(),
+      };
+    }
+    return null;
+  }
+
+  // Standard email-based user authentication
+  const user = await this.users.findOne({ where: { email: emailOrUsername } });
+  if (!user) {
+    return null;
+  }
+
+  const match = await bcrypt.compare(password, user.passwordHash);
+  if (!match) {
+    return null;
+  }
+
+  return user;
+}
+```
 
 ## Environment Variables
 
 To enable root authentication, add to `.env`:
 
 ```bash
-# Option: Allow system root login
+# Enable system root login with username 'root'
 NPANEL_ROOT_PASSWORD=your-secure-root-password
-
-# Optional: Override default root email
-NPANEL_ROOT_EMAIL=root@localhost
-
-# Optional: Set root user role (default: ADMIN)
-NPANEL_ROOT_ROLE=ADMIN
 ```
 
-## Implementation Recommendation
+That's it! No other configuration needed.
 
-For production systems, I recommend **Option 1** (create admin user via API) because:
-- ✅ Secure: Uses bcrypt hashing
-- ✅ Auditable: Tracked in governance system
-- ✅ Standard: Uses same authentication as regular users
-- ✅ Manageable: Can be changed/reset through UI
+## Authentication Flow (Updated)
 
-For development/testing, **Option 2** (system root) is useful as a fallback.
-
-## Security Considerations
-
-- Always use strong passwords (minimum 8 characters)
-- Use HTTPS in production
-- Rotate root credentials regularly
-- Log all authentication events (already done via `AuthLoginEvent`)
-- Consider IP whitelisting for root access
-- Monitor failed login attempts
+1. User sends username/email + password to `/v1/login`
+2. `IamService.validateUser()` checks:
+   - If username is "root" → validate against `NPANEL_ROOT_PASSWORD`
+   - Otherwise → look up in database by email
+3. Returns user if credentials match
+4. JwtService creates access + refresh tokens
+5. Tokens sent as HTTP-only cookies
+6. Client authenticated for subsequent requests
 
 ## Testing Root Login
 
 ```bash
-# Test authentication
+# Export the root password
+export NPANEL_ROOT_PASSWORD="my-secure-password"
+
+# Start the Npanel backend
+npm run start:prod
+
+# Test root authentication with username
 curl -c cookies.txt -X POST http://localhost:3000/v1/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "root@localhost", "password": "test-password"}'
+  -d '{"email": "root", "password": "my-secure-password"}'
 
 # Use authenticated session
 curl -b cookies.txt http://localhost:3000/v1/admin/status
 ```
 
-## Questions?
+## Security Considerations
 
-For implementation of Option 2 or 3, refer to the code structure above and the main installer commit history in the repository.
+- ✅ **Simple**: Just set `NPANEL_ROOT_PASSWORD` environment variable
+- ✅ **No database changes**: Works with any existing schema
+- ✅ **Username-based**: Use "root" instead of "root@localhost" or "root@domain"
+- ✅ **Flexible**: Still supports regular email-based users
+- ⚠️ **Important**: Use strong passwords (minimum 8 characters)
+- ⚠️ **Production**: Always use HTTPS
+- ⚠️ **Audit**: All login events are still logged via `AuthLoginEvent`
+
+## Switching Between Authentication Methods
+
+The system now supports multiple authentication methods simultaneously:
+
+1. **System Root** (username "root"):
+   - Username: `root`
+   - Password: Value of `NPANEL_ROOT_PASSWORD`
+   - No database entry needed
+
+2. **Database Users** (email-based):
+   - Username: `user@domain.com` (any email)
+   - Password: User's bcrypt-hashed password from database
+   - Can have any role (ADMIN, RESELLER, CUSTOMER, SUPPORT)
+
+Both methods work at the same time!
