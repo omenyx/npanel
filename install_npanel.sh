@@ -2245,6 +2245,9 @@ parse_args() {
       logs|--logs) MODE="logs"; shift ;;
       restart|--restart) MODE="restart"; shift ;;
       backend-logs|--backend-logs) MODE="backend-logs"; shift ;;
+      backend-restart|--backend-restart) MODE="backend-restart"; shift ;;
+      frontend-logs|--frontend-logs) MODE="frontend-logs"; shift ;;
+      frontend-restart|--frontend-restart) MODE="frontend-restart"; shift ;;
       --rebuild-nginx) MODE="rebuild-nginx"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
@@ -2301,6 +2304,30 @@ main() {
       log "Services restarted. Checking status..."
       sleep 2
       check_deployment_status
+      exit $?
+      ;;
+    backend-restart)
+      require_root
+      log "Restarting backend service..."
+      systemctl restart npanel-backend || die "Failed to restart backend"
+      log "Backend restarted. Waiting 2 seconds..."
+      sleep 2
+      check_deployment_status
+      exit $?
+      ;;
+    frontend-restart)
+      require_root
+      log "Restarting frontend service..."
+      systemctl restart npanel-frontend || die "Failed to restart frontend"
+      log "Frontend restarted. Waiting 2 seconds..."
+      sleep 2
+      check_deployment_status
+      exit $?
+      ;;
+    frontend-logs)
+      require_root
+      log "Displaying Npanel frontend logs (last 100 lines)..."
+      journalctl -u npanel-frontend -n 100 --no-pager || echo "No frontend logs available"
       exit $?
       ;;
     rebuild-nginx)
@@ -2470,8 +2497,13 @@ main() {
   log "   │  Restart services:                                      │"
   log "   │  sudo ./install_npanel.sh restart                       │"
   log "   │                                                         │"
-  log "   │  Follow backend logs live:                              │"
+  log "   │  Restart specific service:                              │"
+  log "   │  sudo ./install_npanel.sh backend-restart               │"
+  log "   │  sudo ./install_npanel.sh frontend-restart              │"
+  log "   │                                                         │"
+  log "   │  View service logs:                                     │"
   log "   │  sudo ./install_npanel.sh backend-logs                  │"
+  log "   │  sudo ./install_npanel.sh frontend-logs                 │"
   log "   │                                                         │"
   log "   │  Fix missing admin/customer ports (2082-2087):          │"
   log "   │  sudo ./install_npanel.sh --rebuild-nginx               │"
