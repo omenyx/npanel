@@ -187,7 +187,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
               )}
               {currentStep === "complete" ? (
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={handleComplete}
                   className="gap-2"
                 >
@@ -196,7 +196,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
                 </Button>
               ) : (
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() => {
                     const nextIdx = currentIndex + 1;
                     if (nextIdx < steps.length) {
