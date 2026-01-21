@@ -700,12 +700,15 @@ EOF
 
 verify_tools() {
   resolve_tool_cmds
+  log "Verifying core tools installation..."
+  
   local missing=0
   local missing_list=""
   
   # Check for absolutely required tools (core system tools)
+  # Note: Check for actual binaries, not package names
   local -a core_tools=(
-    "rsync" "git" "openssh-client"
+    "rsync" "git" "ssh" "ssh-keyscan"
   )
   
   # Check for hosting-related tools (may not all be present initially)
@@ -713,9 +716,12 @@ verify_tools() {
     "useradd" "userdel" "nginx" "mysql" "mariadb" "php-fpm" "exim" "dovecot" "pure-ftpd" "pdns_server" "rndc"
   )
   
-  # Verify core tools
+  # Verify core tools with detailed output
   for tool in "${core_tools[@]}"; do
-    if ! check_cmd "$tool"; then
+    if check_cmd "$tool"; then
+      log "✓ Found core tool: $tool"
+    else
+      err "✗ Missing core tool: $tool"
       missing=$((missing+1))
       missing_list="${missing_list}${tool}, "
     fi
@@ -726,16 +732,21 @@ verify_tools() {
   for tool in "${optional_tools[@]}"; do
     if ! check_cmd "$tool" && [[ ! -x "/usr/sbin/$tool" ]] && [[ ! -x "/usr/bin/$tool" ]]; then
       optional_missing="${optional_missing}${tool}, "
+    else
+      log "✓ Found optional tool: $tool"
     fi
   done
   
   if [[ -n "$optional_missing" ]]; then
     log "Note: Some optional hosting tools are not yet available: ${optional_missing%, }"
+    log "These services can be installed later as needed."
   fi
   
   if [[ "$missing" -gt 0 ]]; then
-    die "Required tools missing: ${missing_list%, }"
+    die "Required core tools missing: ${missing_list%, }. Please install these tools and retry."
   fi
+  
+  log "All core tools verified successfully!"
 }
 
 install_npanel_dependencies() {
