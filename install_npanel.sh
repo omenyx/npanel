@@ -2409,6 +2409,47 @@ full_system_diagnostic() {
   log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
+show_admin_credentials() {
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "🔐 NPANEL ADMIN CREDENTIALS"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log ""
+  
+  local env_file="$NPANEL_DIR/backend/.env"
+  
+  if [[ ! -f "$env_file" ]]; then
+    log "❌ Backend .env file not found at: $env_file"
+    log "   Please ensure Npanel is properly installed."
+    return 1
+  fi
+  
+  # Extract root password from .env
+  local root_password=$(grep "^NPANEL_ROOT_PASSWORD=" "$env_file" | cut -d= -f2-)
+  
+  if [[ -z "$root_password" ]]; then
+    log "❌ NPANEL_ROOT_PASSWORD not found in .env file"
+    log "   Your installation may be incomplete."
+    return 1
+  fi
+  
+  log "📧 LOGIN CREDENTIALS"
+  log "   Username: root"
+  log "   Password: $root_password"
+  log ""
+  log "🌐 ACCESS POINTS"
+  log "   Admin Dashboard:  https://127.0.0.1:2086 or https://127.0.0.1:2087"
+  log "   Customer Portal:  https://127.0.0.1:2082 or https://127.0.0.1:2083"
+  log "   Unified Proxy:    http://127.0.0.1:8080/admin"
+  log ""
+  log "💡 NOTES"
+  log "   • Username is 'root' (not an email)"
+  log "   • Keep this password secure"
+  log "   • Change password after first login"
+  log "   • Password is stored in: $env_file"
+  log ""
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -2424,6 +2465,7 @@ parse_args() {
       frontend-logs|--frontend-logs) MODE="frontend-logs"; shift ;;
       frontend-restart|--frontend-restart) MODE="frontend-restart"; shift ;;
       --rebuild-nginx) MODE="rebuild-nginx"; shift ;;
+      --credentials|credentials|--show-credentials) MODE="credentials"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
       --ref) NPANEL_REF="$2"; shift 2 ;;
@@ -2513,6 +2555,11 @@ main() {
       configure_nginx
       log "✓ Nginx configuration rebuilt successfully"
       check_deployment_status
+      exit $?
+      ;;
+    credentials)
+      require_root
+      show_admin_credentials
       exit $?
       ;;
     full-diagnose)
