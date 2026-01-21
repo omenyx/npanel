@@ -1065,13 +1065,18 @@ verify_tools() {
 install_npanel_dependencies() {
   log "Installing backend dependencies"
   pushd "$NPANEL_DIR/backend" >/dev/null
-  npm ci || npm install
-  npm run build
+  npm ci || npm install || die "Backend npm install failed!"
+  log "Building backend for production..."
+  npm run build || die "Backend build failed!"
+  if [[ ! -f "dist/main.js" ]]; then
+    die "Backend build completed but dist/main.js not found!"
+  fi
+  log "Backend build successful: dist/main.js verified"
   popd >/dev/null
 
   log "Installing frontend dependencies"
   pushd "$NPANEL_DIR/frontend" >/dev/null
-  npm ci || npm install
+  npm ci || npm install || die "Frontend npm install failed!"
   log "Building frontend for production..."
   npm run build || die "Frontend build failed!"
   if [[ ! -d ".next" ]]; then
