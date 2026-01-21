@@ -14,6 +14,8 @@ type SystemHealth = {
     status: "pass" | "fail" | "warn";
     message?: string;
   }>;
+  nameservers?: string[];
+  dnsBackend?: string;
 };
 
 export function SetupWizard({ onComplete }: { onComplete: () => void }) {
@@ -259,6 +261,40 @@ function HealthCheckStep({
           </div>
         ))}
       </div>
+
+      {/* DNS/Nameserver Configuration */}
+      <div className="mt-6 rounded-lg border border-zinc-700 bg-zinc-900/50 p-4">
+        <div className="mb-3 text-sm font-semibold text-zinc-50">
+          Nameserver Configuration
+        </div>
+        <div className="space-y-2 text-xs text-zinc-400">
+          {health.dnsBackend && (
+            <div>
+              <span className="font-medium text-zinc-300">DNS Backend:</span>{" "}
+              {health.dnsBackend}
+            </div>
+          )}
+          {health.nameservers && health.nameservers.length > 0 ? (
+            <div>
+              <div className="font-medium text-emerald-400 mb-1.5">
+                ✓ Nameservers Configured
+              </div>
+              <div className="space-y-1 ml-2">
+                {health.nameservers.map((ns, idx) => (
+                  <div key={idx} className="text-zinc-300">
+                    • {ns}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-yellow-400 font-medium">
+              ⚠ No nameservers configured
+            </div>
+          )}
+        </div>
+      </div>
+
       {health.ok && (
         <div className="mt-4 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-400">
           ✓ All systems operational

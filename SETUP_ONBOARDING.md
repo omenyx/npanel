@@ -35,6 +35,13 @@ After installation and first login, Npanel provides a guided setup experience to
 - DNS service running
 - FTP service running
 - System resources available
+- **Nameserver configuration** (new)
+
+✅ **Nameserver Verification:**
+- DNS backend type (BIND, PowerDNS, etc.)
+- Configured nameservers listed
+- Warning if no nameservers set
+- Ready for zone creation
 
 **Action:** Automatic - just verify all systems show green checkmarks
 
