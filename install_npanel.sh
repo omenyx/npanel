@@ -1480,6 +1480,8 @@ install_npanel_dependencies() {
   pushd "$NPANEL_DIR/frontend" >/dev/null
   npm ci || npm install || die "Frontend npm install failed!"
   log "Building frontend for production..."
+  # Ensure frontend uses correct API base URL (/v1 not /api)
+  export NEXT_PUBLIC_API_BASE_URL="/v1"
   npm run build || die "Frontend build failed!"
   if [[ ! -d ".next" ]]; then
     die "Frontend build completed but .next directory not found!"
@@ -1519,6 +1521,7 @@ configure_nginx() {
     return
   fi
   mkdir -p "$(dirname "$conf")"
+  log "Writing nginx configuration with /v1 API routing support..."
   cat > "$conf" <<'NGCONF'
 # Upstream backend
 upstream npanel_backend {
@@ -1781,8 +1784,18 @@ NGCONF
     mkdir -p "$(dirname "$enable_link")"
     ln -sf "$conf" "$enable_link"
   fi
-  nginx -t
+  nginx -t || die "Nginx configuration syntax error!"
   svc restart nginx
+  
+  # Validate nginx routing configuration
+  log "Validating nginx routing configuration..."
+  if ! grep -q "location /v1" "$conf" 2>/dev/null; then
+    die "ERROR: Nginx config missing /v1 location block - API routing will fail!"
+  fi
+  if ! grep -q "upstream npanel_backend" "$conf" 2>/dev/null; then
+    die "ERROR: Nginx config missing backend upstream definition!"
+  fi
+  log "✓ Nginx configuration validated successfully"
 }
 
 setup_services() {
@@ -1898,6 +1911,25 @@ verify_deployment() {
     fi
     sleep 3
   done
+  
+  # Verify nginx is routing /v1 API requests correctly
+  log "Verifying nginx API routing to /v1..."
+  retries=0
+  until curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; do
+    retries=$((retries+1))
+    if [[ "$retries" -gt 10 ]]; then
+      warn "⚠ WARNING: Nginx /v1 API routing verification failed!"
+      warn "  Frontend may not be able to reach the backend API"
+      warn "  Check nginx config: sudo cat /etc/nginx/conf.d/npanel.conf | grep -A 5 'location /v1'"
+      warn "  Restart nginx: sudo systemctl reload nginx"
+      break
+    fi
+    sleep 1
+  done
+  if [[ $retries -le 10 ]]; then
+    log "✓ Nginx /v1 API routing verified"
+  fi
+  
   retries=0
   until curl -fsS http://127.0.0.1:8080/admin >/dev/null 2>&1; do
     retries=$((retries+1))
@@ -2123,6 +2155,14 @@ main() {
   log "   │  2. Check service running: sudo systemctl status nginx  │"
   log "   │  3. Check logs: journalctl -u npanel-backend -n 50      │"
   log "   │  4. Run diagnostics: sudo ./install_npanel.sh --diagnose│"
+  log "   │                                                         │"
+  log "   │  Frontend shows \"Unable to reach backend API\"?          │"
+  log "   │  This means nginx is not routing /v1 requests correctly │"
+  log "   │  Check:                                                 │"
+  log "   │  - sudo grep 'location /v1' /etc/nginx/conf.d/*.conf    │"
+  log "   │  - sudo nginx -t                                        │"
+  log "   │  - sudo systemctl reload nginx                          │"
+  log "   │  - curl http://localhost:8080/v1/health                 │"
   log "   │                                                         │"
   log "   │  Nginx not listening?                                   │"
   log "   │  sudo nginx -t                                          │"
