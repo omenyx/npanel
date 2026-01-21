@@ -761,6 +761,85 @@ diagnose_nginx() {
   return 0
 }
 
+validate_api_routing() {
+  # Comprehensive API routing validation - called at multiple install stages
+  # Returns 0 if validation passes, 1 if critical issues found
+  
+  local test_name="${1:-API Routing}"
+  local endpoint="${2:-http://127.0.0.1:8080/v1/health}"
+  local skip_if_services_down="${3:-0}"
+  
+  log "Validating $test_name..."
+  
+  # Check 1: Verify nginx is running and listening
+  if ! check_cmd systemctl && ! check_cmd lsof; then
+    warn "Cannot validate - systemctl/lsof not available"
+    return 0
+  fi
+  
+  if check_cmd systemctl; then
+    if ! systemctl is-active nginx >/dev/null 2>&1; then
+      if [[ "$skip_if_services_down" -eq 1 ]]; then
+        warn "  ⊘ Nginx not running (services still starting)"
+        return 0
+      fi
+      err "  ✗ Nginx is not running!"
+      return 1
+    fi
+  fi
+  
+  # Check 2: Verify nginx configuration syntax
+  if ! nginx -t >/dev/null 2>&1; then
+    err "  ✗ Nginx configuration has syntax errors!"
+    nginx -t 2>&1 | sed 's/^/    /'
+    return 1
+  fi
+  log "  ✓ Nginx configuration syntax valid"
+  
+  # Check 3: Verify /v1 location block exists in nginx config
+  if ! grep -r "location /v1" /etc/nginx/conf.d/ >/dev/null 2>&1 && \
+     ! grep -r "location /v1" /etc/nginx/sites-enabled/ >/dev/null 2>&1; then
+    err "  ✗ Nginx /v1 location block not found!"
+    err "    Expected: grep 'location /v1' /etc/nginx/conf.d/npanel.conf"
+    err "    Fix: Nginx configuration may be outdated or incorrectly deployed"
+    return 1
+  fi
+  log "  ✓ Nginx /v1 location block found"
+  
+  # Check 4: Verify backend upstream is defined
+  if ! grep -r "upstream npanel_backend" /etc/nginx/conf.d/ >/dev/null 2>&1 && \
+     ! grep -r "upstream npanel_backend" /etc/nginx/sites-enabled/ >/dev/null 2>&1; then
+    err "  ✗ Nginx backend upstream not configured!"
+    return 1
+  fi
+  log "  ✓ Nginx backend upstream configured"
+  
+  # Check 5: Test actual API endpoint connectivity
+  local response
+  response=$(curl -fsS "$endpoint" 2>/dev/null || echo "")
+  
+  if [[ -n "$response" ]] && echo "$response" | grep -q "status"; then
+    log "  ✓ API endpoint responding correctly"
+    return 0
+  fi
+  
+  # If we get here, endpoint didn't respond properly
+  if [[ "$skip_if_services_down" -eq 1 ]]; then
+    warn "  ⊘ API endpoint not responding yet (services still starting)"
+    return 0
+  fi
+  
+  err "  ✗ API endpoint not responding!"
+  err "    Endpoint: $endpoint"
+  err "    Response: $response"
+  err "    Diagnostics:"
+  err "    1. Check if backend is running: sudo systemctl status npanel-backend"
+  err "    2. Check if frontend is running: sudo systemctl status npanel-frontend"
+  err "    3. Verify nginx routing: sudo nginx -t && sudo systemctl reload nginx"
+  err "    4. Test backend directly: curl http://127.0.0.1:3000/v1/health"
+  return 1
+}
+
 mysql_exec() {
   if check_cmd mysql; then
     mysql -u root -e "$1"
@@ -1787,7 +1866,7 @@ NGCONF
   nginx -t || die "Nginx configuration syntax error!"
   svc restart nginx
   
-  # Validate nginx routing configuration
+  # Validate nginx routing configuration using comprehensive validator
   log "Validating nginx routing configuration..."
   if ! grep -q "location /v1" "$conf" 2>/dev/null; then
     die "ERROR: Nginx config missing /v1 location block - API routing will fail!"
@@ -1795,6 +1874,9 @@ NGCONF
   if ! grep -q "upstream npanel_backend" "$conf" 2>/dev/null; then
     die "ERROR: Nginx config missing backend upstream definition!"
   fi
+  
+  # Run full validation (services may not be up yet, so skip endpoint test)
+  validate_api_routing "nginx configuration" "http://127.0.0.1:8080/v1/health" 1 || warn "Initial nginx validation inconclusive (services may not be running)"
   log "✓ Nginx configuration validated successfully"
 }
 
@@ -1912,22 +1994,10 @@ verify_deployment() {
     sleep 3
   done
   
-  # Verify nginx is routing /v1 API requests correctly
-  log "Verifying nginx API routing to /v1..."
-  retries=0
-  until curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; do
-    retries=$((retries+1))
-    if [[ "$retries" -gt 10 ]]; then
-      warn "⚠ WARNING: Nginx /v1 API routing verification failed!"
-      warn "  Frontend may not be able to reach the backend API"
-      warn "  Check nginx config: sudo cat /etc/nginx/conf.d/npanel.conf | grep -A 5 'location /v1'"
-      warn "  Restart nginx: sudo systemctl reload nginx"
-      break
-    fi
-    sleep 1
-  done
-  if [[ $retries -le 10 ]]; then
-    log "✓ Nginx /v1 API routing verified"
+  # Verify complete API routing using comprehensive validator
+  if ! validate_api_routing "API routing and connectivity" "http://127.0.0.1:8080/v1/health" 0; then
+    dump_npanel_debug
+    die "API routing validation failed - frontend will not be able to reach backend"
   fi
   
   retries=0
@@ -1984,6 +2054,14 @@ main() {
   fi
   if [[ "$SKIP_DEPS" -eq 0 && "$MODE" == "update" ]]; then
     install_dependencies
+  fi
+
+  # For UPDATE mode: validate current environment before making changes
+  if [[ "$MODE" == "update" ]]; then
+    log "Running pre-update environment validation..."
+    log "Checking API routing configuration..."
+    validate_api_routing "Current environment" "http://127.0.0.1:8080/v1/health" 0 || warn "Current environment has routing issues - update may fix them"
+    log ""
   fi
 
   # Always stop services before any code changes or builds (no compile against live services)
