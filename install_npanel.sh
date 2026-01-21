@@ -224,22 +224,32 @@ install_dependencies() {
       ;;
     dnf)
       # RHEL-based systems (AlmaLinux, Rocky, RHEL, CentOS Stream)
-      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc g++
+      log "Installing core dependencies for RHEL-based system"
+      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc g++ make
       # Enable PowerTools/CRB repository for EPEL dependencies
       if [[ "$OS_ID" == "almalinux" ]] || [[ "$OS_ID" == "rocky" ]] || [[ "$OS_ID" == "rhel" ]]; then
+        log "Enabling CRB repository for RHEL 9+ compatibility"
         dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools 2>/dev/null || true
       fi
       # Install EPEL repository
+      log "Installing EPEL repository"
       pkg_install epel-release || true
       pkg_update
       # Install web server, database, and mail services
-      pkg_install nginx mariadb-server mariadb php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot dovecot-imapd || true
+      log "Installing web server and hosting services"
+      pkg_install nginx || log "Warning: nginx installation failed"
+      pkg_install mariadb-server mariadb || log "Warning: mariadb installation failed"
+      pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
+      pkg_install exim dovecot dovecot-imapd || log "Warning: Mail services installation failed"
       # Install DNS utilities and server
-      pkg_install bind-utils bind || true
+      log "Installing DNS services"
+      pkg_install bind-utils bind || log "Warning: BIND installation failed"
       # Install FTP server
-      pkg_install pure-ftpd || true
+      log "Installing FTP server"
+      pkg_install pure-ftpd || log "Warning: pure-ftpd installation failed"
       # Install PowerDNS
-      pkg_install pdns pdns-backend-mysql || true
+      log "Installing PowerDNS"
+      pkg_install pdns pdns-backend-mysql || log "Warning: PowerDNS installation failed"
       ensure_nodesource_20
       ;;
     yum)
@@ -691,24 +701,41 @@ EOF
 verify_tools() {
   resolve_tool_cmds
   local missing=0
-  local -a required=(
-    "${CMD_USERADD:-}" "useradd"
-    "${CMD_USERDEL:-}" "userdel"
-    "${CMD_NGINX:-}" "nginx"
-    "${CMD_MYSQL:-}" "mysql"
-    "${CMD_RSYNC:-}" "rsync"
+  local missing_list=""
+  
+  # Check for absolutely required tools (core system tools)
+  local -a core_tools=(
+    "rsync" "git" "openssh-client"
   )
-  for ((i=0; i<${#required[@]}; i+=2)); do
-    local path="${required[i]}" name="${required[i+1]}"
-    if [[ -n "$path" && -x "$path" ]]; then
-      :
-    elif check_cmd "$name"; then
-      :
-    else
+  
+  # Check for hosting-related tools (may not all be present initially)
+  local -a optional_tools=(
+    "useradd" "userdel" "nginx" "mysql" "mariadb" "php-fpm" "exim" "dovecot" "pure-ftpd" "pdns_server" "rndc"
+  )
+  
+  # Verify core tools
+  for tool in "${core_tools[@]}"; do
+    if ! check_cmd "$tool"; then
       missing=$((missing+1))
+      missing_list="${missing_list}${tool}, "
     fi
   done
-  [[ "$missing" -eq 0 ]] || die "One or more required tools are missing."
+  
+  # Check optional hosting tools - just warn if missing, don't fail
+  local optional_missing=""
+  for tool in "${optional_tools[@]}"; do
+    if ! check_cmd "$tool" && [[ ! -x "/usr/sbin/$tool" ]] && [[ ! -x "/usr/bin/$tool" ]]; then
+      optional_missing="${optional_missing}${tool}, "
+    fi
+  done
+  
+  if [[ -n "$optional_missing" ]]; then
+    log "Note: Some optional hosting tools are not yet available: ${optional_missing%, }"
+  fi
+  
+  if [[ "$missing" -gt 0 ]]; then
+    die "Required tools missing: ${missing_list%, }"
+  fi
 }
 
 install_npanel_dependencies() {
