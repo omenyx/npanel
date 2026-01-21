@@ -310,11 +310,18 @@ svc() {
   local action="$1"
   local name="$2"
   local retval=0
+  
+  # Check if service exists before trying to start it
   if check_cmd systemctl; then
+    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${name}\.service"; then
+      # Service doesn't exist, don't try to start it
+      return 0
+    fi
     if ! systemctl "$action" "$name" 2>/dev/null; then
       retval=1
     fi
   else
+    # Can't check reliably without systemctl, just try
     if ! service "$name" "$action" 2>/dev/null; then
       retval=1
     fi
@@ -344,17 +351,42 @@ ensure_services_start() {
   log "Starting services for $OS_ID ($PKG_MGR)..."
   FAILED_SERVICES=()
   
-  # Database services
+  # Database services - try to start at least one
   log "Starting database services..."
-  if svc start mysql; then
-    log "✓ MySQL started"
+  local db_started=0
+  
+  # Check which database service is installed and available
+  if systemctl list-unit-files 2>/dev/null | grep -q mariadb.service; then
+    # MariaDB is available
+    if svc start mariadb; then
+      log "✓ MariaDB started"
+      db_started=1
+    else
+      log "✗ MariaDB failed to start"
+    fi
+  elif systemctl list-unit-files 2>/dev/null | grep -q mysql.service; then
+    # MySQL is available (but not MariaDB)
+    if svc start mysql; then
+      log "✓ MySQL started"
+      db_started=1
+    else
+      log "✗ MySQL failed to start"
+    fi
   else
-    log "✗ MySQL failed to start (may be normal if using MariaDB)"
+    # Try both and see what works
+    if svc start mariadb; then
+      log "✓ MariaDB started"
+      db_started=1
+    fi
+    if [[ $db_started -eq 0 ]] && svc start mysql; then
+      log "✓ MySQL started"
+      db_started=1
+    fi
   fi
-  if svc start mariadb; then
-    log "✓ MariaDB started"
-  else
-    log "✗ MariaDB failed to start"
+  
+  if [[ $db_started -eq 0 ]]; then
+    log "⚠ Warning: No database service (MySQL/MariaDB) could be started"
+    log "  Try: sudo systemctl start mariadb  OR  sudo systemctl start mysql"
   fi
   
   # Web server
@@ -711,6 +743,21 @@ mysql_exec() {
 setup_mysql() {
   log "Configuring MySQL/MariaDB"
   ensure_services_start
+  
+  # Give database service time to fully start
+  log "Waiting for database service to be ready..."
+  local retries=0
+  local max_retries=30
+  until mysql -u root -e "SELECT 1" >/dev/null 2>&1; do
+    retries=$((retries+1))
+    if [[ "$retries" -gt "$max_retries" ]]; then
+      err "Database service did not become ready within $((max_retries*2)) seconds"
+      err "Try: sudo systemctl restart mariadb"
+      return 1
+    fi
+    sleep 2
+  done
+  log "✓ Database is ready"
 
   mysql_exec "CREATE DATABASE IF NOT EXISTS npanel;"
   
