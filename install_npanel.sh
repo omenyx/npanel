@@ -223,7 +223,9 @@ install_dependencies() {
       ensure_nodesource_20
       pkg_install lsof git rsync openssh-client build-essential openssl
       # Debian/Ubuntu uses exim4 and specific package versions
-      pkg_install nginx mysql-server exim4 dovecot-core dovecot-imapd bind9 pure-ftpd || true
+      log "Installing mail services (Exim and Dovecot)"
+      pkg_install nginx mysql-server exim4 pure-ftpd bind9 || true
+      pkg_install dovecot-core dovecot-imapd || log "Warning: Dovecot installation failed"
       pkg_install php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd || true
       pkg_install pdns-server pdns-backend-mysql || true
       ;;
@@ -269,7 +271,9 @@ install_dependencies() {
       # Older systems may have different package names
       pkg_install nginx mariadb-server || log "Warning: nginx/mariadb installation failed"
       pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
-      pkg_install exim dovecot || log "Warning: Mail services installation failed"
+      log "Installing mail services (Exim and Dovecot)"
+      pkg_install exim || log "Warning: Exim installation failed"
+      pkg_install dovecot dovecot-imapd || log "Warning: Dovecot installation failed"
       pkg_install bind-utils bind || log "Warning: BIND installation failed"
       pkg_install pure-ftpd || log "Warning: pure-ftpd installation failed"
       ensure_nodesource_20
