@@ -306,6 +306,22 @@ install_dependencies() {
 # Track failed services
 FAILED_SERVICES=()
 
+# Try to start a service without tracking it as a failure if it doesn't exist
+svc_optional() {
+  local action="$1"
+  local name="$2"
+  
+  # Check if service exists before trying to start it
+  if check_cmd systemctl; then
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${name}\.service"; then
+      systemctl "$action" "$name" 2>/dev/null || true
+    fi
+  else
+    service "$name" "$action" 2>/dev/null || true
+  fi
+  return 0
+}
+
 svc() {
   local action="$1"
   local name="$2"
@@ -405,15 +421,15 @@ ensure_services_start() {
   case "$PKG_MGR" in
     dnf|yum)
       svc start php-fpm && log "✓ PHP-FPM started"
-      svc start php8.2-fpm || true
-      svc start php8.1-fpm || true
-      svc start php8.0-fpm || true
+      svc_optional start php8.2-fpm
+      svc_optional start php8.1-fpm
+      svc_optional start php8.0-fpm
       ;;
     apt)
       svc start php-fpm && log "✓ PHP-FPM started"
-      svc start php8.2-fpm || true
-      svc start php8.1-fpm || true
-      svc start php8.0-fpm || true
+      svc_optional start php8.2-fpm
+      svc_optional start php8.1-fpm
+      svc_optional start php8.0-fpm
       ;;
     pacman)
       svc start php-fpm && log "✓ PHP-FPM started" || log "Note: PHP-FPM not available"
@@ -457,7 +473,7 @@ ensure_services_start() {
   else
     log "✗ Pure-FTPd failed to start"
   fi
-  svc start pure-ftpd-mysql || true
+  svc_optional start pure-ftpd-mysql
   
   # DNS services
   log "Starting DNS services..."
@@ -524,11 +540,24 @@ verify_all_services() {
   fi
   
   if [[ ${#FAILED_SERVICES[@]} -gt 0 ]]; then
-    err ""
-    err "============ SERVICE STARTUP SUMMARY ============"
-    err "Failed to start or not available: ${FAILED_SERVICES[*]}"
-    err "================================================"
-    err ""
+    # Filter out non-critical failures
+    local critical_failures=()
+    for svc in "${FAILED_SERVICES[@]}"; do
+      case "$svc" in
+        # Services that are optional/version-specific - don't report
+        mysql|php8.2-fpm|php8.1-fpm|php8.0-fpm|pure-ftpd-mysql|pdns) ;;
+        # Critical services that should be reported if they fail
+        *) critical_failures+=("$svc") ;;
+      esac
+    done
+    
+    if [[ ${#critical_failures[@]} -gt 0 ]]; then
+      err ""
+      err "============ SERVICE STARTUP SUMMARY ============"
+      err "Failed to start: ${critical_failures[*]}"
+      err "================================================"
+      err ""
+    fi
   fi
   
   if [[ $services_ok -eq 0 ]]; then
