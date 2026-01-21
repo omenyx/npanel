@@ -842,11 +842,12 @@ verify_deployment() {
     log "Skipping deployment verification due to --no-restart"
     return
   fi
-  until curl -fsS http://127.0.0.1:3000/system/tools/status >/dev/null 2>&1; do
+  # Use public health endpoint for backend readiness (no auth required)
+  until curl -fsS http://127.0.0.1:3000/v1/health >/dev/null 2>&1; do
     retries=$((retries+1))
     if [[ "$retries" -gt "$max_retries" ]]; then
       dump_npanel_debug
-      die "Backend failed to start on port 3000."
+      die "Backend health probe failed on port 3000."
     fi
     sleep 3
   done
