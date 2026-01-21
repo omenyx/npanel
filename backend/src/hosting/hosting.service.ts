@@ -362,10 +362,7 @@ export class HostingService implements OnModuleInit {
     }
     await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
     await this.phpFpmAdapter.ensurePoolAbsent(context, username);
-    await this.mysqlAdapter.ensureAccountAbsent(context, {
-      username: `${username}_db`,
-      databases: [],
-    });
+    await this.mysqlAdapter.ensureAccountAbsent(context, `${username}_db`);
     await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
     if (ftpRequired) {
       await this.ftpAdapter.ensureAccountAbsent(context, username);
@@ -666,12 +663,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'system_user',
                 targetKey: username,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -687,12 +684,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
-                targetKind: 'document_root',
-                targetKey: documentRoot!,
+                operation: 'delete',
+                targetKind: 'hosting_service',
+                targetKey: service.id,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, path: documentRoot!, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -713,12 +710,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'php_fpm_pool',
                 targetKey: phpPoolName,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -739,12 +736,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'web_vhost',
                 targetKey: service.primaryDomain,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -763,12 +760,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'mysql_account',
                 targetKey: mysqlUsername,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -787,12 +784,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'dns_zone',
                 targetKey: service.primaryDomain,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -813,12 +810,12 @@ export class HostingService implements OnModuleInit {
               } catch (rbErr) {
                 await context.log({
                   adapter: 'hosting',
-                  operation: 'rollback',
+                  operation: 'delete',
                   targetKind: 'mailbox',
                   targetKey: `postmaster@${service.primaryDomain}`,
                   success: false,
                   dryRun: context.dryRun,
-                  details: { phase, traceId },
+                  details: { phase, traceId, action: 'rollback' },
                   errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
@@ -838,16 +835,16 @@ export class HostingService implements OnModuleInit {
               try {
                 await this.ftpAdapter.ensureAccountAbsent(context, username);
               } catch (rbErr) {
-                await context.log({
-                  adapter: 'hosting',
-                  operation: 'rollback',
-                  targetKind: 'ftp_account',
-                  targetKey: username,
-                  success: false,
-                  dryRun: context.dryRun,
-                  details: { phase, traceId },
-                  errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
-                });
+              await context.log({
+                adapter: 'hosting',
+                operation: 'delete',
+                targetKind: 'ftp_account',
+                targetKey: username,
+                success: false,
+                dryRun: context.dryRun,
+                details: { phase, traceId, action: 'rollback' },
+                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+              });
               }
             });
           }
@@ -1000,12 +997,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'system_user',
                 targetKey: username,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1021,12 +1018,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
-                targetKind: 'document_root',
-                targetKey: documentRoot!,
+                operation: 'delete',
+                targetKind: 'hosting_service',
+                targetKey: service.id,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, path: documentRoot!, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1047,12 +1044,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'php_fpm_pool',
                 targetKey: phpPoolName,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1073,12 +1070,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'web_vhost',
                 targetKey: service.primaryDomain,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1097,12 +1094,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'mysql_account',
                 targetKey: mysqlUsername,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1121,12 +1118,12 @@ export class HostingService implements OnModuleInit {
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
-                operation: 'rollback',
+                operation: 'delete',
                 targetKind: 'dns_zone',
                 targetKey: service.primaryDomain,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId },
+                details: { phase, traceId, action: 'rollback' },
                 errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
@@ -1147,12 +1144,12 @@ export class HostingService implements OnModuleInit {
               } catch (rbErr) {
                 await context.log({
                   adapter: 'hosting',
-                  operation: 'rollback',
+                  operation: 'delete',
                   targetKind: 'mailbox',
                   targetKey: `postmaster@${service.primaryDomain}`,
                   success: false,
                   dryRun: context.dryRun,
-                  details: { phase, traceId },
+                  details: { phase, traceId, action: 'rollback' },
                   errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
@@ -1174,12 +1171,12 @@ export class HostingService implements OnModuleInit {
               } catch (rbErr) {
                 await context.log({
                   adapter: 'hosting',
-                  operation: 'rollback',
+                  operation: 'delete',
                   targetKind: 'ftp_account',
                   targetKey: username,
                   success: false,
                   dryRun: context.dryRun,
-                  details: { phase, traceId },
+                  details: { phase, traceId, action: 'rollback' },
                   errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
