@@ -2,9 +2,13 @@
 
 set -euo pipefail
 
+# Debug mode for verbose output
+DEBUG="${DEBUG:-0}"
+
 log() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
 err() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; }
 die() { err "$*"; exit 1; }
+debug() { [[ "$DEBUG" -eq 1 ]] && echo -e "\033[1;36m[DEBUG]\033[0m $*" || true; }
 
 NPANEL_DIR="${NPANEL_DIR:-/opt/npanel}"
 NPANEL_BRANCH="${NPANEL_BRANCH:-main}"
@@ -17,6 +21,7 @@ SKIP_DEPS=0
 SKIP_SELF_UPDATE="${NPANEL_SKIP_SELF_UPDATE:-0}"
 NO_REBUILD=0
 NO_RESTART=0
+VERBOSE=0
 LOCKFILE="/var/lock/npanel-install.lock"
 LOCK_ACQUIRED=0
 
@@ -1573,6 +1578,7 @@ parse_args() {
       --skip-self-update) SKIP_SELF_UPDATE=1; shift ;;
       --no-rebuild) NO_REBUILD=1; shift ;;
       --no-restart) NO_RESTART=1; shift ;;
+      --verbose) VERBOSE=1; DEBUG=1; shift ;;
       *)
         die "Unknown argument: $1"
         ;;
