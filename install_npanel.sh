@@ -222,10 +222,32 @@ install_dependencies() {
       pkg_install php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-xml php8.2-intl php8.2-zip php8.2-gd || true
       pkg_install pdns-server pdns-backend-mysql || true
       ;;
-    dnf|yum)
-      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl
-      pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot pure-ftpd || true
+    dnf)
+      # RHEL-based systems (AlmaLinux, Rocky, RHEL, CentOS Stream)
+      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc g++
+      # Enable PowerTools/CRB repository for EPEL dependencies
+      if [[ "$OS_ID" == "almalinux" ]] || [[ "$OS_ID" == "rocky" ]] || [[ "$OS_ID" == "rhel" ]]; then
+        dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools 2>/dev/null || true
+      fi
+      # Install EPEL repository
+      pkg_install epel-release || true
+      pkg_update
+      # Install web server, database, and mail services
+      pkg_install nginx mariadb-server mariadb php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot dovecot-imapd || true
+      # Install DNS utilities and server
       pkg_install bind-utils bind || true
+      # Install FTP server
+      pkg_install pure-ftpd || true
+      # Install PowerDNS
+      pkg_install pdns pdns-backend-mysql || true
+      ensure_nodesource_20
+      ;;
+    yum)
+      # Older yum-based systems
+      pkg_install curl ca-certificates git rsync openssh-clients lsof openssl gcc gcc-c++
+      pkg_install nginx mariadb-server php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd exim dovecot || true
+      pkg_install bind-utils bind || true
+      pkg_install pure-ftpd || true
       ensure_nodesource_20
       ;;
     pacman)
@@ -259,13 +281,19 @@ ensure_services_start() {
   svc start mysql
   svc start mariadb
   svc start nginx
-  svc start php8.2-fpm
+  # Try PHP-FPM with different version names (AlmaLinux 9 may use php-fpm or versioned names)
   svc start php-fpm
+  svc start php8.2-fpm
+  svc start php8.1-fpm
+  svc start php8.0-fpm
+  # Mail services
   svc start exim4
   svc start exim
   svc start dovecot
+  # FTP services
   svc start pure-ftpd
   svc start pure-ftpd-mysql
+  # DNS services
   if check_cmd pdns_server || [[ -x /usr/sbin/pdns_server ]]; then
     svc stop bind9
     svc stop named
@@ -477,6 +505,10 @@ resolve_tool_cmds() {
     CMD_PHP_FPM="$(command -v php-fpm8.2)"
   elif check_cmd php-fpm8.3; then
     CMD_PHP_FPM="$(command -v php-fpm8.3)"
+  elif check_cmd php-fpm8.1; then
+    CMD_PHP_FPM="$(command -v php-fpm8.1)"
+  elif check_cmd php-fpm8.0; then
+    CMD_PHP_FPM="$(command -v php-fpm8.0)"
   elif check_cmd php-fpm; then
     CMD_PHP_FPM="$(command -v php-fpm)"
   elif [[ -x /usr/sbin/php-fpm ]]; then
