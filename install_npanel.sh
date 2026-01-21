@@ -240,7 +240,11 @@ install_dependencies() {
       pkg_install nginx || log "Warning: nginx installation failed"
       pkg_install mariadb-server mariadb || log "Warning: mariadb installation failed"
       pkg_install php-fpm php-mysqlnd php-mbstring php-xml php-intl php-zip php-gd || log "Warning: PHP installation failed"
-      pkg_install exim dovecot dovecot-imapd || log "Warning: Mail services installation failed"
+      # Install mail services separately for better error handling
+      log "Installing Exim mail server"
+      pkg_install exim || log "Warning: Exim installation failed"
+      log "Installing Dovecot IMAP services"
+      pkg_install dovecot dovecot-imapd || log "Warning: Dovecot installation failed"
       # Install DNS utilities and server
       log "Installing DNS services"
       pkg_install bind-utils bind || log "Warning: BIND installation failed"
@@ -288,22 +292,35 @@ svc() {
 
 ensure_services_start() {
   log "Starting services..."
+  
+  # Database services
   svc start mysql
   svc start mariadb
+  
+  # Web server
   svc start nginx
-  # Try PHP-FPM with different version names (AlmaLinux 9 may use php-fpm or versioned names)
+  
+  # PHP-FPM with different version names (AlmaLinux 9 may use php-fpm or versioned names)
   svc start php-fpm
   svc start php8.2-fpm
   svc start php8.1-fpm
   svc start php8.0-fpm
-  # Mail services
-  svc start exim4
-  svc start exim
-  svc start dovecot
+  
+  # Mail services - Exim is standard on RHEL-based systems
+  log "Starting Exim mail server..."
+  svc start exim || svc start exim4 || log "Note: Exim not started (may start on first run)"
+  
+  # IMAP services
+  log "Starting Dovecot IMAP server..."
+  svc start dovecot || log "Note: Dovecot not started"
+  
   # FTP services
+  log "Starting FTP services..."
   svc start pure-ftpd
   svc start pure-ftpd-mysql
+  
   # DNS services
+  log "Starting DNS services..."
   if check_cmd pdns_server || [[ -x /usr/sbin/pdns_server ]]; then
     svc stop bind9
     svc stop named
