@@ -2235,12 +2235,158 @@ check_deployment_status() {
   log ""
 }
 
+full_system_diagnostic() {
+  require_root
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "🔧 NPANEL FULL SYSTEM DIAGNOSTIC"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log ""
+  
+  # 1. System Information
+  log "📊 SYSTEM INFORMATION"
+  log "   OS: $(cat /etc/os-release 2>/dev/null | grep '^NAME=' | cut -d= -f2 | tr -d '\"')"
+  log "   Kernel: $(uname -r)"
+  log "   Uptime: $(uptime -p 2>/dev/null || uptime)"
+  log ""
+  
+  # 2. Service Status
+  log "🔧 SERVICE STATUS"
+  for svc in npanel-backend npanel-frontend nginx; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      log "   ✓ $svc: ACTIVE"
+    else
+      log "   ✗ $svc: INACTIVE"
+    fi
+  done
+  log ""
+  
+  # 3. Port Status
+  log "🔌 PORT LISTENING STATUS"
+  for port in 3000 3001 8080 2082 2083 2086 2087; do
+    if netstat -tln 2>/dev/null | grep -q ":$port " || ss -tln 2>/dev/null | grep -q ":$port "; then
+      log "   ✓ Port $port: LISTENING"
+    else
+      log "   ✗ Port $port: NOT LISTENING"
+    fi
+  done
+  log ""
+  
+  # 4. Database Status
+  log "💾 DATABASE STATUS"
+  local db_path="${NPANEL_DIR}/data/npanel.sqlite"
+  if [[ -f "$db_path" ]]; then
+    local db_size=$(du -h "$db_path" 2>/dev/null | cut -f1)
+    log "   ✓ Database file exists: $db_path ($db_size)"
+    if [[ -r "$db_path" ]]; then
+      log "   ✓ Database is readable"
+    else
+      log "   ✗ Database is NOT readable (permission denied)"
+    fi
+    if [[ -w "$db_path" ]]; then
+      log "   ✓ Database is writable"
+    else
+      log "   ✗ Database is NOT writable (permission denied)"
+    fi
+  else
+    log "   ✗ Database file NOT FOUND: $db_path"
+  fi
+  log ""
+  
+  # 5. Environment Configuration
+  log "⚙️  ENVIRONMENT CONFIGURATION"
+  if [[ -f "$NPANEL_DIR/backend/.env" ]]; then
+    log "   ✓ Backend .env exists"
+    local has_jwt=$(grep -q "^JWT_SECRET=" "$NPANEL_DIR/backend/.env" && echo "yes" || echo "no")
+    local has_db=$(grep -q "^DATABASE_PATH=" "$NPANEL_DIR/backend/.env" && echo "yes" || echo "no")
+    log "     - JWT_SECRET set: $has_jwt"
+    log "     - DATABASE_PATH set: $has_db"
+  else
+    log "   ✗ Backend .env NOT FOUND"
+  fi
+  log ""
+  
+  # 6. Network Connectivity
+  log "🌐 NETWORK CONNECTIVITY TEST"
+  if curl -fsS http://127.0.0.1:3000/v1/health >/dev/null 2>&1; then
+    log "   ✓ Backend API responding: http://127.0.0.1:3000/v1/health"
+  else
+    log "   ✗ Backend API NOT responding: http://127.0.0.1:3000/v1/health"
+  fi
+  
+  if curl -fsS http://127.0.0.1:3001 >/dev/null 2>&1; then
+    log "   ✓ Frontend responding: http://127.0.0.1:3001"
+  else
+    log "   ✗ Frontend NOT responding: http://127.0.0.1:3001"
+  fi
+  
+  if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then
+    log "   ✓ Nginx proxy responding: http://127.0.0.1:8080"
+  else
+    log "   ✗ Nginx proxy NOT responding: http://127.0.0.1:8080"
+  fi
+  log ""
+  
+  # 7. Recent Errors
+  log "⚠️  RECENT SERVICE ERRORS (last 5 from each)"
+  log "   Backend errors:"
+  journalctl -u npanel-backend -n 5 --no-pager 2>/dev/null | grep -i "error\|failed\|exception" | head -5 | sed 's/^/     /' || echo "     (no errors found in logs)"
+  log ""
+  log "   Frontend errors:"
+  journalctl -u npanel-frontend -n 5 --no-pager 2>/dev/null | grep -i "error\|failed\|exception" | head -5 | sed 's/^/     /' || echo "     (no errors found in logs)"
+  log ""
+  
+  # 8. Recommendations
+  log "💡 DIAGNOSTIC RECOMMENDATIONS"
+  local issues=0
+  
+  if ! systemctl is-active --quiet npanel-backend 2>/dev/null; then
+    log "   ⚠️  Backend service is down:"
+    log "      • Check logs: sudo journalctl -u npanel-backend -n 50 --no-pager"
+    log "      • Try restart: sudo systemctl restart npanel-backend"
+    log "      • Check database: ls -la /opt/npanel/data/"
+    issues=$((issues+1))
+  fi
+  
+  if ! curl -fsS http://127.0.0.1:3000/v1/health >/dev/null 2>&1; then
+    log "   ⚠️  Backend API not responding:"
+    log "      • Verify port 3000 is open: sudo netstat -tln | grep 3000"
+    log "      • Restart backend: sudo systemctl restart npanel-backend"
+    log "      • View full logs: sudo journalctl -u npanel-backend -n 100 --no-pager"
+    issues=$((issues+1))
+  fi
+  
+  if ! systemctl is-active --quiet nginx 2>/dev/null; then
+    log "   ⚠️  Nginx is down:"
+    log "      • Test config: sudo nginx -t"
+    log "      • Start nginx: sudo systemctl start nginx"
+    log "      • View logs: sudo journalctl -u nginx -n 50 --no-pager"
+    issues=$((issues+1))
+  fi
+  
+  if [[ ! -f "$db_path" ]]; then
+    log "   ⚠️  Database file not found:"
+    log "      • Restart backend to create: sudo systemctl restart npanel-backend"
+    log "      • Check directory: ls -la /opt/npanel/data/"
+    issues=$((issues+1))
+  fi
+  
+  if [[ $issues -eq 0 ]]; then
+    log "   ✓ No obvious issues detected - system appears healthy"
+    log "   • If issues persist, check backend logs for details"
+    log "   • Run: sudo journalctl -u npanel-backend --no-pager | tail -50"
+  fi
+  
+  log ""
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --update) MODE="update"; shift ;;
       --install) MODE="install"; shift ;;
       --diagnose|diagnose|--nginx-diagnose) MODE="diagnose"; shift ;;
+      --full-diagnose|--full-diagnostic) MODE="full-diagnose"; shift ;;
       --status|status) MODE="status"; shift ;;
       logs|--logs) MODE="logs"; shift ;;
       restart|--restart) MODE="restart"; shift ;;
@@ -2338,6 +2484,10 @@ main() {
       configure_nginx
       log "✓ Nginx configuration rebuilt successfully"
       check_deployment_status
+      exit $?
+      ;;
+    full-diagnose)
+      full_system_diagnostic
       exit $?
       ;;
   esac
