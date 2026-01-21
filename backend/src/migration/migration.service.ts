@@ -89,7 +89,7 @@ export class MigrationService {
     const pingRes = await this.execSshCommand(
       { ...sourceConfig, host, sshUser, sshPort, authMethod },
       'echo npanel_ok',
-      { strictHostKey: false, connectTimeoutSeconds: 8 },
+      { strictHostKey: true, connectTimeoutSeconds: 8 },
     );
     checks.push({
       name: 'ssh_connectivity',
@@ -108,7 +108,7 @@ export class MigrationService {
         ? await this.execSshCommand(
             { ...sourceConfig, host, sshUser, sshPort, authMethod },
             'test -f /usr/local/cpanel/version && cat /usr/local/cpanel/version || echo no_cpanel_version_file',
-            { strictHostKey: false, connectTimeoutSeconds: 8 },
+            { strictHostKey: true, connectTimeoutSeconds: 8 },
           )
         : { code: 1, stdout: '', stderr: 'ssh_unreachable' };
     const cpanelVersion =
@@ -130,7 +130,7 @@ export class MigrationService {
         ? await this.execSshCommand(
             { ...sourceConfig, host, sshUser, sshPort, authMethod },
             'test -x /usr/local/cpanel/bin/whmapi1 && echo whmapi1_ok || echo whmapi1_missing',
-            { strictHostKey: false, connectTimeoutSeconds: 8 },
+            { strictHostKey: true, connectTimeoutSeconds: 8 },
           )
         : { code: 1, stdout: '', stderr: 'ssh_unreachable' };
     checks.push({
@@ -190,7 +190,7 @@ export class MigrationService {
     const listRes = await this.execSshCommand(
       { ...sourceConfig, host, sshUser, sshPort, authMethod },
       '/usr/local/cpanel/bin/whmapi1 listaccts --output=json',
-      { strictHostKey: false, connectTimeoutSeconds: 12 },
+      { strictHostKey: true, connectTimeoutSeconds: 12 },
     );
     if (listRes.code !== 0) {
       const err = new Error('source_account_discovery_failed') as Error & {
@@ -1324,15 +1324,17 @@ export class MigrationService {
     serviceId?: string;
   }> {
     // Step 1: Derive deterministic service ID from source
-    const serviceIdHash = this.deriveServiceId(sourceUsername, sourcePrimaryDomain);
+    const serviceIdHash = this.deriveServiceId(
+      sourceUsername,
+      sourcePrimaryDomain,
+    );
     const systemUsername = `np_${serviceIdHash}`;
     const mysqlUsername = `${systemUsername}_db`;
     const homeDirectory = `/home/${systemUsername}`;
 
     // Step 2: Check if this service already exists (idempotency)
-    const existing = await this.hosting.findServiceBySystemUsername(
-      systemUsername,
-    );
+    const existing =
+      await this.hosting.findServiceBySystemUsername(systemUsername);
     if (existing && existing.systemUsername && existing.mysqlUsername) {
       this.logger.log(
         `Service identity mapping: found existing service for ${sourceUsername}@${sourcePrimaryDomain} ` +
@@ -1347,9 +1349,8 @@ export class MigrationService {
     }
 
     // Step 3: Check for collision with existing services
-    const collision = await this.hosting.findServiceBySystemUsername(
-      systemUsername,
-    );
+    const collision =
+      await this.hosting.findServiceBySystemUsername(systemUsername);
     if (collision) {
       const errorMsg =
         `Service ID collision detected: ${systemUsername} already in use. ` +
@@ -1375,13 +1376,13 @@ export class MigrationService {
    * Uses first 12 chars of SHA256 hash to keep system usernames reasonably short.
    * Format: np_XXXXXX where X is hex digit (safe for Unix usernames).
    */
-  private deriveServiceId(sourceUsername: string, sourceDomain: string): string {
+  private deriveServiceId(
+    sourceUsername: string,
+    sourceDomain: string,
+  ): string {
     const crypto = require('node:crypto');
     const combined = `${sourceUsername}:${sourceDomain}`;
-    const hash = crypto
-      .createHash('sha256')
-      .update(combined)
-      .digest('hex');
+    const hash = crypto.createHash('sha256').update(combined).digest('hex');
     // Take first 8 chars for 32-bit hash space (low collision probability)
     // Max Unix username is 32 chars, np_XXXXXXXX = 11 chars leaves room
     return hash.substring(0, 8).toLowerCase();
@@ -1398,10 +1399,9 @@ export class MigrationService {
     const issues: string[] = [];
 
     // Check system username uniqueness
-    const existingSystem =
-      await this.hosting.findServiceBySystemUsername(
-        serviceMapping.systemUsername,
-      );
+    const existingSystem = await this.hosting.findServiceBySystemUsername(
+      serviceMapping.systemUsername,
+    );
     if (existingSystem) {
       issues.push(
         `System username '${serviceMapping.systemUsername}' already in use`,
@@ -1422,19 +1422,14 @@ export class MigrationService {
    * Get the service identity mapping for a migration account.
    * Returns stored mapping or derives it if not yet stored.
    */
-  async getServiceIdentityMapping(
-    migrationAccount: MigrationAccount,
-  ): Promise<{
+  async getServiceIdentityMapping(migrationAccount: MigrationAccount): Promise<{
     systemUsername: string;
     mysqlUsername: string;
     homeDirectory: string;
     serviceId?: string;
   }> {
     // Check if already stored in metadata
-    if (
-      migrationAccount.metadata &&
-      migrationAccount.metadata.serviceMapping
-    ) {
+    if (migrationAccount.metadata && migrationAccount.metadata.serviceMapping) {
       return migrationAccount.metadata.serviceMapping;
     }
 
@@ -1460,9 +1455,7 @@ export class MigrationService {
    * Enhanced validation and checksum verification for file transfers
    */
 
-  async validateFilesystemMigration(
-    targetServiceId: string,
-  ): Promise<{
+  async validateFilesystemMigration(targetServiceId: string): Promise<{
     validated: boolean;
     issues: string[];
     stats: {
@@ -1473,10 +1466,10 @@ export class MigrationService {
   }> {
     const service = await this.hosting.get(targetServiceId);
     const targetPath = `/home/${service.systemUsername}`;
-    
+
     const issues: string[] = [];
-    let totalFiles = 0;
-    let totalSize = 0;
+    const totalFiles = 0;
+    const totalSize = 0;
     let directoriesChecked = 0;
 
     // Check basic directory structure
@@ -1495,7 +1488,8 @@ export class MigrationService {
       gid: 1000,
     };
 
-    const expectedUid = parseInt(service.systemUsername?.substring(3) ?? '1000', 10) + 5000;
+    const expectedUid =
+      parseInt(service.systemUsername?.substring(3) ?? '1000', 10) + 5000;
     if (directoryStat.uid !== expectedUid) {
       issues.push(
         `Directory ownership mismatch: expected uid ${expectedUid}, got ${directoryStat.uid}`,
@@ -1629,8 +1623,9 @@ export class MigrationService {
     }
 
     return {
-      plan: `Transfer ${sourceStats.totalFiles} files (${(sourceStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB) ` +
-            `from source to target using rsync with checksums`,
+      plan:
+        `Transfer ${sourceStats.totalFiles} files (${(sourceStats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB) ` +
+        `from source to target using rsync with checksums`,
       warnings,
       estimatedDuration,
       rsyncFlags,
@@ -1641,9 +1636,7 @@ export class MigrationService {
    * TASK 1.3: Database Migration Support Methods
    */
 
-  async validateDatabaseMigration(
-    targetServiceId: string,
-  ): Promise<{
+  async validateDatabaseMigration(targetServiceId: string): Promise<{
     valid: boolean;
     issues: string[];
     databaseCount: number;
@@ -1727,9 +1720,7 @@ export class MigrationService {
     }
 
     // Would execute remote mysql query to list databases
-    this.logger.debug(
-      `Getting database list for ${sourceUsername} on ${host}`,
-    );
+    this.logger.debug(`Getting database list for ${sourceUsername} on ${host}`);
 
     // Placeholder - real implementation would SSH and query MySQL
     return [];
@@ -1778,9 +1769,7 @@ export class MigrationService {
    * TASK 1.4: Mail & DNS Migration Support Methods
    */
 
-  async validateMailMigration(
-    targetServiceId: string,
-  ): Promise<{
+  async validateMailMigration(targetServiceId: string): Promise<{
     validated: boolean;
     issues: string[];
     mailboxCount: number;
@@ -1790,7 +1779,9 @@ export class MigrationService {
 
     // Check service is provisioned
     if (service.status !== 'active' && service.status !== 'provisioning') {
-      issues.push(`Service status is ${service.status}, expected active or provisioning`);
+      issues.push(
+        `Service status is ${service.status}, expected active or provisioning`,
+      );
     }
 
     // In real implementation:
@@ -1864,9 +1855,7 @@ export class MigrationService {
     checks.push({
       name: 'Web Access (HTTP/HTTPS)',
       status: webAccess ? 'pass' : 'fail',
-      details: webAccess
-        ? 'Website accessible'
-        : 'Website not responding',
+      details: webAccess ? 'Website accessible' : 'Website not responding',
     });
 
     // Check 2: Database Access
@@ -1979,5 +1968,3 @@ export class MigrationService {
     }
   }
 }
-
-
