@@ -12,7 +12,9 @@ import { AccountsModule } from '../accounts/accounts.module';
 
 const jwtSecret = process.env.JWT_SECRET ?? '';
 if (!jwtSecret || jwtSecret.length < 32) {
-  throw new Error('JWT_SECRET is missing or too short; set a strong secret (>=32 chars)');
+  throw new Error(
+    'JWT_SECRET is missing or too short; set a strong secret (>=32 chars)',
+  );
 }
 
 @Module({

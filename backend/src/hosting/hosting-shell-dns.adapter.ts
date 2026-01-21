@@ -8,7 +8,7 @@ import type {
   DnsZoneSpec,
 } from './hosting-adapters';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
-import { execCommand, type ExecResult } from '../system/exec-command';
+import { execCommand } from '../system/exec-command';
 
 function getArgsFromEnv(baseEnvName: string, defaultArgs: string[]): string[] {
   const argsValue = process.env[`${baseEnvName}_ARGS`];
@@ -69,29 +69,6 @@ function buildBindZoneFile(zoneName: string, records: DnsRecordSpec[]): string {
     lines.push(`${owner} IN ${type} ${data}`);
   }
   return `${lines.join('\n')}\n`;
-}
-
-function buildPowerDnsRecord(
-  zoneName: string,
-  record: DnsRecordSpec,
-): { name: string; type: string; ttl: number; data: string } | null {
-  const type = record.type.toUpperCase();
-  const data = record.data.trim();
-  if (!data) {
-    return null;
-  }
-  const ttl =
-    Number.parseInt(process.env.NPANEL_POWERDNS_DEFAULT_TTL || '300', 10) ||
-    300;
-  let owner: string;
-  if (!record.name || record.name === '@') {
-    owner = zoneName;
-  } else if (record.name.endsWith('.')) {
-    owner = record.name;
-  } else {
-    owner = `${record.name}.${zoneName}`;
-  }
-  return { name: owner, type, ttl, data };
 }
 
 export class ShellDnsAdapter implements DnsAdapter {
@@ -217,7 +194,7 @@ export class ShellDnsAdapter implements DnsAdapter {
         throw err;
       }
       const baseArgs = getArgsFromEnv('NPANEL_POWERDNS_PDNSUTIL', []);
-      
+
       // Ensure zone exists
       const listResult = await execCommand(pdnsPath, [
         ...baseArgs,
@@ -257,7 +234,10 @@ export class ShellDnsAdapter implements DnsAdapter {
 
       // Use load-zone to sync records
       const zoneContent = buildBindZoneFile(spec.zoneName, spec.records);
-      const tmpFile = join('/tmp', `npanel-dns-${spec.zoneName}-${Date.now()}.zone`);
+      const tmpFile = join(
+        '/tmp',
+        `npanel-dns-${spec.zoneName}-${Date.now()}.zone`,
+      );
       await writeFile(tmpFile, zoneContent, { mode: 0o644 });
 
       const loadResult = await execCommand(pdnsPath, [
@@ -538,7 +518,7 @@ export class ShellDnsAdapter implements DnsAdapter {
     return [];
   }
 
-  async listZones(context: AdapterContext): Promise<string[]> {
+  async listZones(): Promise<string[]> {
     const backend = getDnsBackendName();
     if (!backend) {
       return [];
@@ -547,7 +527,10 @@ export class ShellDnsAdapter implements DnsAdapter {
       const pdnsBin = process.env.NPANEL_POWERDNS_PDNSUTIL_CMD || 'pdnsutil';
       const pdnsPath = await this.tools.resolve(pdnsBin);
       const baseArgs = getArgsFromEnv('NPANEL_POWERDNS_PDNSUTIL', []);
-      const result = await execCommand(pdnsPath, [...baseArgs, 'list-all-zones']);
+      const result = await execCommand(pdnsPath, [
+        ...baseArgs,
+        'list-all-zones',
+      ]);
       if (result.code !== 0) {
         return [];
       }

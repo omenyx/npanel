@@ -36,13 +36,15 @@ export class IamController {
   ) {}
 
   private getRequestIp(req: Request): string | null {
-    const direct = (req as any)?.ip ?? (req as any)?.socket?.remoteAddress ?? null;
+    const direct =
+      (req as any)?.ip ?? (req as any)?.socket?.remoteAddress ?? null;
     const proxiesEnv = process.env.NPANEL_TRUSTED_PROXIES || '';
     const trusted = proxiesEnv
       .split(',')
       .map((p) => p.trim())
       .filter((p) => p.length > 0);
-    const isTrustedProxy = typeof direct === 'string' && trusted.includes(direct);
+    const isTrustedProxy =
+      typeof direct === 'string' && trusted.includes(direct);
     if (isTrustedProxy) {
       const xf = req.get('x-forwarded-for');
       if (xf && typeof xf === 'string') {
@@ -55,7 +57,7 @@ export class IamController {
 
   @Post('install/init')
   @HttpCode(HttpStatus.CREATED)
-  async initialize(@Body() body: InstallInitDto) {
+  initialize() {
     throw new Error('Install init requires prepare and confirm');
   }
 
@@ -83,7 +85,9 @@ export class IamController {
   @HttpCode(HttpStatus.OK)
   async initializeConfirm(@Body() body: { intentId: string; token: string }) {
     const intent = await this.governance.verify(body.intentId, body.token);
-    const steps: ActionStep[] = [{ name: 'create_initial_admin', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'create_initial_admin', status: 'SUCCESS' },
+    ];
     try {
       const alreadyInitialized = await this.iam.hasAnyUser();
       if (alreadyInitialized) {
@@ -96,7 +100,10 @@ export class IamController {
         });
       }
       const payload = intent.payload as any;
-      const admin = await this.iam.createInitialAdmin(payload.adminEmail, payload.adminPassword);
+      const admin = await this.iam.createInitialAdmin(
+        payload.adminEmail,
+        payload.adminPassword,
+      );
       return this.governance.recordResult({
         intent,
         status: 'SUCCESS',
@@ -104,14 +111,27 @@ export class IamController {
         result: { status: 'initialized', adminId: admin.id },
       });
     } catch (e) {
-      steps[0] = { name: 'create_initial_admin', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'create_initial_admin',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post('auth/login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() body: LoginDto, @Req() req: Request, @Res() res: Response) {
+  async login(
+    @Body() body: LoginDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const user = await this.iam.validateUser(body.email, body.password);
     if (!user) {
       return {
@@ -162,7 +182,7 @@ export class IamController {
     });
 
     const csrfToken = randomUUID();
-    const secure = (process.env.NODE_ENV === 'production');
+    const secure = process.env.NODE_ENV === 'production';
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure,
@@ -230,7 +250,8 @@ export class IamController {
     if (!adminId || !adminEmail) {
       throw new BadRequestException('Unauthorized');
     }
-    const customerId = typeof body?.customerId === 'string' ? body.customerId : '';
+    const customerId =
+      typeof body?.customerId === 'string' ? body.customerId : '';
     if (!customerId) {
       throw new BadRequestException('customerId_required');
     }
@@ -282,7 +303,7 @@ export class IamController {
       { expiresIn: '5m' },
     );
     const csrfToken = randomUUID();
-    const secure = (process.env.NODE_ENV === 'production');
+    const secure = process.env.NODE_ENV === 'production';
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure,
@@ -314,14 +335,17 @@ export class IamController {
   @Post('auth/impersonation/end')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async endImpersonation(@Req() req: Request & { user?: any }, @Res() res: Response) {
+  async endImpersonation(
+    @Req() req: Request & { user?: any },
+    @Res() res: Response,
+  ) {
     const sessionId = req.user?.sessionId;
     const impersonation = req.user?.impersonation;
     if (!impersonation?.active || !sessionId) {
       throw new BadRequestException('not_impersonating');
     }
     await this.iam.endSession(sessionId);
-    const secure = (process.env.NODE_ENV === 'production');
+    const secure = process.env.NODE_ENV === 'production';
     res.clearCookie('access_token', { path: '/', secure, sameSite: 'lax' });
     res.clearCookie('csrf_token', { path: '/', secure, sameSite: 'lax' });
     return res.json({ ok: true });
@@ -337,7 +361,10 @@ export class IamController {
     const limit = Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : 25;
     const impersonatedCustomerId = req.user?.impersonation?.customerId ?? null;
     if (impersonatedCustomerId) {
-      const events = await this.iam.listLoginEventsForCustomer(impersonatedCustomerId, limit);
+      const events = await this.iam.listLoginEventsForCustomer(
+        impersonatedCustomerId,
+        limit,
+      );
       return { scope: 'customer', customerId: impersonatedCustomerId, events };
     }
     if (req.user?.role === 'CUSTOMER') {
@@ -345,7 +372,10 @@ export class IamController {
       if (!customer) {
         return { scope: 'customer', customerId: null, events: [] };
       }
-      const events = await this.iam.listLoginEventsForCustomer(customer.id, limit);
+      const events = await this.iam.listLoginEventsForCustomer(
+        customer.id,
+        limit,
+      );
       return { scope: 'customer', customerId: customer.id, events };
     }
     const events = await this.iam.listLoginEventsForUser(req.user.id, limit);
@@ -368,10 +398,7 @@ export class IamController {
   @Post('auth/change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async changePassword(
-    @Req() req: Request & { user?: any },
-    @Body() body: ChangePasswordDto,
-  ) {
+  changePassword() {
     throw new Error('Change password requires prepare and confirm');
   }
 
@@ -406,29 +433,56 @@ export class IamController {
   ) {
     const userId = req.user?.id;
     if (!userId) throw new BadRequestException('Unauthorized');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
-    const steps: ActionStep[] = [{ name: 'change_password', status: 'SUCCESS' }];
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
+    const steps: ActionStep[] = [
+      { name: 'change_password', status: 'SUCCESS' },
+    ];
     try {
       const payload = intent.payload as any;
-      await this.iam.changePassword(userId, payload.currentPassword, payload.newPassword);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { ok: true } });
+      await this.iam.changePassword(
+        userId,
+        payload.currentPassword,
+        payload.newPassword,
+      );
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { ok: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'change_password', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'change_password_failed' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'change_password',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'change_password_failed',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post('auth/logout-all')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logoutAll(@Req() req: Request & { user?: any }) {
+  logoutAll() {
     throw new Error('Logout all requires prepare and confirm');
   }
 
   @Post('auth/logout-all/prepare')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logoutAllPrepare(@Req() req: Request & { user?: any }, @Body() body: { reason?: string }) {
+  async logoutAllPrepare(
+    @Req() req: Request & { user?: any },
+    @Body() body: { reason?: string },
+  ) {
     const userId = req.user?.id;
     if (!userId) throw new BadRequestException('Unauthorized');
     return this.governance.prepare({
@@ -447,17 +501,38 @@ export class IamController {
   @Post('auth/logout-all/confirm')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logoutAllConfirm(@Req() req: Request & { user?: any }, @Body() body: { intentId: string; token: string }) {
+  async logoutAllConfirm(
+    @Req() req: Request & { user?: any },
+    @Body() body: { intentId: string; token: string },
+  ) {
     const userId = req.user?.id;
     if (!userId) throw new BadRequestException('Unauthorized');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const steps: ActionStep[] = [{ name: 'logout_all', status: 'SUCCESS' }];
     try {
       await this.iam.logoutAll(userId);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { ok: true } });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { ok: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'logout_all', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'logout_all_failed' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'logout_all',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'logout_all_failed',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 

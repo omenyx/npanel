@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, BadRequestException, HttpException, HttpStatus, Query, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Query,
+  UseGuards,
+  Req,
+  Logger,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { ToolResolver } from './tool-resolver';
 import { HostingService } from '../hosting/hosting.service';
@@ -43,6 +55,8 @@ function normalizeServiceName(value: string): string {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 export class ToolsController {
+  private readonly logger = new Logger(ToolsController.name);
+
   constructor(
     private readonly toolResolver: ToolResolver,
     private readonly hostingService: HostingService, // Inject HostingService
@@ -119,7 +133,7 @@ export class ToolsController {
         }
       }
     } catch (e) {
-      console.error('Failed to get disk usage', e);
+      this.logger.error(`Failed to get disk usage: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     return {
@@ -146,12 +160,18 @@ export class ToolsController {
   }
 
   @Post('restart-service')
-  async restartService(@Body('service') service: string) {
-    throw new BadRequestException('Restart service requires prepare and confirm');
+  restartService() {
+    throw new BadRequestException(
+      'Restart service requires prepare and confirm',
+    );
   }
 
   @Post('restart-service/prepare')
-  async restartServicePrepare(@Body('service') service: string, @Body('reason') reason: string | undefined, @Req() req: Request) {
+  async restartServicePrepare(
+    @Body('service') service: string,
+    @Body('reason') reason: string | undefined,
+    @Req() req: Request,
+  ) {
     const allowedServices = [
       'nginx',
       'php8.2-fpm', // Adjust based on actual service name
@@ -195,7 +215,12 @@ export class ToolsController {
     }
 
     const serviceName = normalizeServiceName(requestedService);
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof reason === 'string' ? reason : undefined };
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof reason === 'string' ? reason : undefined,
+    };
     return this.governance.prepare({
       module: 'system',
       action: 'restart_service',
@@ -210,9 +235,20 @@ export class ToolsController {
   }
 
   @Post('restart-service/confirm')
-  async restartServiceConfirm(@Body() body: { intentId: string; token: string }, @Req() req: any) {
-    const actor = { actorId: req?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
+  async restartServiceConfirm(
+    @Body() body: { intentId: string; token: string },
+    @Req() req: any,
+  ) {
+    const actor = {
+      actorId: req?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      actor,
+    );
     const serviceName = (intent.payload as any)?.service as string;
     const steps: ActionStep[] = [
       { name: 'systemctl_restart', status: 'SKIPPED' },
@@ -240,13 +276,19 @@ export class ToolsController {
           intent,
           status: 'PARTIAL_SUCCESS',
           steps,
-          result: { success: true, message: `Service ${serviceName} restarted.` },
+          result: {
+            success: true,
+            message: `Service ${serviceName} restarted.`,
+          },
         });
       } catch (secondError) {
         steps[1] = {
           name: 'service_restart_fallback',
           status: 'FAILED',
-          errorMessage: secondError instanceof Error ? secondError.message : String(secondError),
+          errorMessage:
+            secondError instanceof Error
+              ? secondError.message
+              : String(secondError),
         };
         return this.governance.recordResult({
           intent,
@@ -262,32 +304,32 @@ export class ToolsController {
   async getLogFiles() {
     const candidates = [
       // System
-      '/var/log/syslog',       // Debian/Ubuntu
-      '/var/log/messages',     // RHEL/CentOS/Alma
-      '/var/log/auth.log',     // Debian/Ubuntu
-      '/var/log/secure',       // RHEL/CentOS/Alma
-      '/var/log/cron',         // RHEL/CentOS/Alma
-      '/var/log/dmesg',        // Kernel
-      '/var/log/boot.log',     // Boot
+      '/var/log/syslog', // Debian/Ubuntu
+      '/var/log/messages', // RHEL/CentOS/Alma
+      '/var/log/auth.log', // Debian/Ubuntu
+      '/var/log/secure', // RHEL/CentOS/Alma
+      '/var/log/cron', // RHEL/CentOS/Alma
+      '/var/log/dmesg', // Kernel
+      '/var/log/boot.log', // Boot
 
       // Web Server (Nginx)
       '/var/log/nginx/access.log',
       '/var/log/nginx/error.log',
-      
+
       // Web Server (Apache/Httpd - if applicable)
       '/var/log/apache2/access.log', // Debian/Ubuntu
-      '/var/log/apache2/error.log',  // Debian/Ubuntu
-      '/var/log/httpd/access_log',   // RHEL/CentOS/Alma
-      '/var/log/httpd/error_log',    // RHEL/CentOS/Alma
+      '/var/log/apache2/error.log', // Debian/Ubuntu
+      '/var/log/httpd/access_log', // RHEL/CentOS/Alma
+      '/var/log/httpd/error_log', // RHEL/CentOS/Alma
 
       // Database
-      '/var/log/mysql/error.log',      // MySQL
-      '/var/log/mariadb/mariadb.log',  // MariaDB
+      '/var/log/mysql/error.log', // MySQL
+      '/var/log/mariadb/mariadb.log', // MariaDB
       '/var/log/postgresql/postgresql.log', // Postgres (often versioned dir though)
 
       // Mail
-      '/var/log/mail.log',     // General mail
-      '/var/log/maillog',      // RHEL/CentOS/Alma
+      '/var/log/mail.log', // General mail
+      '/var/log/maillog', // RHEL/CentOS/Alma
       '/var/log/exim4/mainlog', // Exim (Debian)
       '/var/log/exim/main.log', // Exim (RHEL)
 
@@ -301,7 +343,9 @@ export class ToolsController {
       try {
         const s = await stat(p);
         if (s.isFile()) available.push(p);
-      } catch {}
+      } catch {
+        // File doesn't exist or is not accessible
+      }
     }
     return { files: available };
   }

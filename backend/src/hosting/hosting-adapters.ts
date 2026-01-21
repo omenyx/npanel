@@ -148,10 +148,7 @@ export interface MysqlAdapter {
     context: AdapterContext,
     username: string,
   ): Promise<AdapterOperationResult>;
-  listDatabases(
-    context: AdapterContext,
-    username: string,
-  ): Promise<string[]>;
+  listDatabases(context: AdapterContext, username: string): Promise<string[]>;
   resetPassword(
     context: AdapterContext,
     username: string,
@@ -172,9 +169,7 @@ export interface DnsAdapter {
     context: AdapterContext,
     zoneName: string,
   ): Promise<DnsRecordSpec[]>;
-  listZones(
-    context: AdapterContext,
-  ): Promise<string[]>;
+  listZones(context: AdapterContext): Promise<string[]>;
 }
 
 export interface MailAdapter {
@@ -191,10 +186,7 @@ export interface MailAdapter {
     address: string,
     password: string,
   ): Promise<AdapterOperationResult>;
-  listMailboxes(
-    context: AdapterContext,
-    domain: string,
-  ): Promise<string[]>;
+  listMailboxes(context: AdapterContext, domain: string): Promise<string[]>;
 }
 
 export interface FtpAdapter {
@@ -435,7 +427,7 @@ export class NoopMysqlAdapter implements MysqlAdapter {
   async resetPassword(
     context: AdapterContext,
     username: string,
-    password: string,
+    _password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'mysql',
@@ -542,7 +534,7 @@ export class NoopMailAdapter implements MailAdapter {
   async updatePassword(
     context: AdapterContext,
     address: string,
-    password: string,
+    _password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'mail',
@@ -605,7 +597,7 @@ export class NoopFtpAdapter implements FtpAdapter {
   async resetPassword(
     context: AdapterContext,
     username: string,
-    password: string,
+    _password: string,
   ): Promise<AdapterOperationResult> {
     await context.log({
       adapter: 'ftp',

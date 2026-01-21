@@ -5,7 +5,7 @@ import type {
   MailboxSpec,
 } from './hosting-adapters';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
-import { execCommand, type ExecResult } from '../system/exec-command';
+import { execCommand } from '../system/exec-command';
 
 function getArgsFromEnv(baseEnvName: string, defaultArgs: string[]): string[] {
   const argsValue = process.env[`${baseEnvName}_ARGS`];
@@ -196,18 +196,12 @@ export class ShellMailAdapter implements MailAdapter {
     if (!context.dryRun) {
       const mailBin = process.env.NPANEL_MAIL_CMD;
       if (!mailBin) throw new Error('mail_command_not_configured');
-      
-      let command: string;
-      try {
-        command = await this.tools.resolve(mailBin);
-      } catch (err) {
-        // Log error and rethrow (simplified for brevity, matching pattern)
-        throw err;
-      }
+
+      const command = await this.tools.resolve(mailBin);
 
       const args = getArgsFromEnv('NPANEL_MAIL', []);
       const cliArgs: string[] = [...args, 'passwd', address, password];
-      
+
       const result = await execCommand(command, cliArgs);
       if (result.code !== 0) {
         await context.log({
@@ -253,10 +247,10 @@ export class ShellMailAdapter implements MailAdapter {
 
     const args = getArgsFromEnv('NPANEL_MAIL', []);
     const cliArgs: string[] = [...args, 'list', domain];
-    
+
     // In dry-run, we might just return mock data or empty
     if (context.dryRun) {
-        return [`postmaster@${domain}`, `test@${domain}`];
+      return [`postmaster@${domain}`, `test@${domain}`];
     }
 
     const result = await execCommand(command, cliArgs);

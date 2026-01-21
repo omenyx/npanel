@@ -21,11 +21,13 @@ describe('Impersonation (e2e)', () => {
 
     const { IamModule } = await import('../src/iam/iam.module');
     const { HealthModule } = await import('../src/health/health.module');
-    const { MigrationModule } = await import('../src/migration/migration.module');
+    const { MigrationModule } =
+      await import('../src/migration/migration.module');
     const { AccountsModule } = await import('../src/accounts/accounts.module');
     const { HostingModule } = await import('../src/hosting/hosting.module');
     const { SystemModule } = await import('../src/system/system.module');
-    const { GovernanceModule } = await import('../src/governance/governance.module');
+    const { GovernanceModule } =
+      await import('../src/governance/governance.module');
 
     const moduleRef = await Test.createTestingModule({
       imports: [

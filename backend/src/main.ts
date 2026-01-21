@@ -6,7 +6,9 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
-  const corsOriginsEnv = process.env.NPANEL_CORS_ORIGINS || 'http://127.0.0.1:5173,http://127.0.0.1:3000';
+  const corsOriginsEnv =
+    process.env.NPANEL_CORS_ORIGINS ||
+    'http://127.0.0.1:5173,http://127.0.0.1:3000';
   const corsOrigins = corsOriginsEnv
     .split(',')
     .map((o) => o.trim())

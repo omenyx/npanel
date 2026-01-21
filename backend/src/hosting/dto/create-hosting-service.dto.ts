@@ -1,4 +1,11 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, ValidateIf, ValidateNested } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class InlineCustomerDto {

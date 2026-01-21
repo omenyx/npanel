@@ -35,12 +35,25 @@ export class IamService {
     return this.users.save(entity);
   }
 
-  async validateUser(emailOrUsername: string, password: string): Promise<User | null> {
+  async validateUser(
+    emailOrUsername: string,
+    password: string,
+  ): Promise<User | null> {
     // Support root username login (no email format required)
     if (emailOrUsername.toLowerCase() === 'root') {
-      const rootPassword = process.env.NPANEL_ROOT_PASSWORD;
-      if (rootPassword && password === rootPassword) {
-        // Return a virtual root user
+      // Get root password from environment, with multiple fallback options
+      // Works on all distros: Linux, Windows, macOS, WSL, containers, etc.
+      const rootPassword =
+        process.env.NPANEL_ROOT_PASSWORD ||
+        process.env.ROOT_PASSWORD ||
+        process.env.ADMIN_PASSWORD;
+
+      if (
+        rootPassword &&
+        rootPassword.length > 0 &&
+        password === rootPassword
+      ) {
+        // Return a virtual root user (works on any distro without database)
         return {
           id: 'system-root',
           email: 'root@system.local',
@@ -53,8 +66,10 @@ export class IamService {
       return null;
     }
 
-    // Standard email-based user authentication
-    const user = await this.users.findOne({ where: { email: emailOrUsername } });
+    // Standard email-based user authentication (works on all distros)
+    const user = await this.users.findOne({
+      where: { email: emailOrUsername },
+    });
     if (!user) {
       return null;
     }
@@ -144,7 +159,9 @@ export class IamService {
     return true;
   }
 
-  async getActiveImpersonationSession(sessionId: string): Promise<AuthLoginEvent | null> {
+  async getActiveImpersonationSession(
+    sessionId: string,
+  ): Promise<AuthLoginEvent | null> {
     const event = await this.loginEvents.findOne({ where: { sessionId } });
     if (!event) return null;
     if (event.loginType !== 'impersonation') return null;
@@ -153,7 +170,10 @@ export class IamService {
     return event;
   }
 
-  async listLoginEventsForCustomer(customerId: string, limit: number): Promise<AuthLoginEvent[]> {
+  async listLoginEventsForCustomer(
+    customerId: string,
+    limit: number,
+  ): Promise<AuthLoginEvent[]> {
     const take = Math.max(1, Math.min(200, limit));
     return this.loginEvents.find({
       where: { customerId },
@@ -162,7 +182,10 @@ export class IamService {
     });
   }
 
-  async listLoginEventsForUser(userId: string, limit: number): Promise<AuthLoginEvent[]> {
+  async listLoginEventsForUser(
+    userId: string,
+    limit: number,
+  ): Promise<AuthLoginEvent[]> {
     const take = Math.max(1, Math.min(200, limit));
     return this.loginEvents.find({
       where: { userId },

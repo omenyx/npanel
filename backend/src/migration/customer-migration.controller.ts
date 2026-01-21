@@ -65,7 +65,7 @@ export class CustomerMigrationController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createJob(@Req() req: any, @Body() body: CreateMigrationJobDto) {
+  createJob() {
     throw new Error('Customer migration create requires prepare and confirm');
   }
 
@@ -103,12 +103,10 @@ export class CustomerMigrationController {
 
   @Post(':id/accounts')
   @HttpCode(HttpStatus.CREATED)
-  async addAccount(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: AddCustomerMigrationAccountDto,
-  ) {
-    throw new Error('Customer migration account add requires prepare and confirm');
+  addAccount() {
+    throw new Error(
+      'Customer migration account add requires prepare and confirm',
+    );
   }
 
   @Get(':id/steps')
@@ -142,19 +140,22 @@ export class CustomerMigrationController {
 
   @Post(':id/plan')
   @HttpCode(HttpStatus.CREATED)
-  async planJob(@Req() req: any, @Param('id') id: string) {
+  planJob() {
     throw new Error('Customer migration plan requires prepare and confirm');
   }
 
   @Post(':id/run-next')
   @HttpCode(HttpStatus.OK)
-  async runNext(@Req() req: any, @Param('id') id: string) {
+  runNext() {
     throw new Error('Customer migration run-next requires prepare and confirm');
   }
 
   @Post('prepare-create')
   @HttpCode(HttpStatus.OK)
-  async prepareCreateJob(@Req() req: any, @Body() body: CreateMigrationJobDto & { reason?: string }) {
+  async prepareCreateJob(
+    @Req() req: any,
+    @Body() body: CreateMigrationJobDto & { reason?: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
@@ -165,21 +166,41 @@ export class CustomerMigrationController {
       payload: { customerId: customer.id, ...body } as any,
       risk: 'high',
       reversibility: 'requires_restore',
-      impactedSubsystems: ['control_plane_db', 'remote_host', 'filesystem', 'dns', 'mail', 'mysql'],
+      impactedSubsystems: [
+        'control_plane_db',
+        'remote_host',
+        'filesystem',
+        'dns',
+        'mail',
+        'mysql',
+      ],
       actor,
     });
   }
 
   @Post('confirm-create')
   @HttpCode(HttpStatus.OK)
-  async confirmCreateJob(@Req() req: any, @Body() body: { intentId: string; token: string }) {
+  async confirmCreateJob(
+    @Req() req: any,
+    @Body() body: { intentId: string; token: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
-    if (payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const steps: ActionStep[] = [{ name: 'create_migration_job', status: 'SUCCESS' }];
+    if (payload?.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const steps: ActionStep[] = [
+      { name: 'create_migration_job', status: 'SUCCESS' },
+    ];
     try {
-      const job = await this.migrations.createJobForCustomer(customer.id, payload as any);
+      const job = await this.migrations.createJobForCustomer(
+        customer.id,
+        payload,
+      );
       const result = {
         id: job.id,
         name: job.name,
@@ -189,20 +210,39 @@ export class CustomerMigrationController {
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
       };
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'create_migration_job', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'create_migration_job',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/accounts/prepare-add')
   @HttpCode(HttpStatus.OK)
-  async prepareAddAccount(@Req() req: any, @Param('id') id: string, @Body() body: AddCustomerMigrationAccountDto & { reason?: string }) {
+  async prepareAddAccount(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: AddCustomerMigrationAccountDto & { reason?: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
     await this.migrations.getJobForCustomer(customer.id, id);
     const service = await this.hosting.get(body.targetServiceId);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'migrations',
@@ -219,12 +259,23 @@ export class CustomerMigrationController {
 
   @Post(':id/accounts/confirm-add')
   @HttpCode(HttpStatus.OK)
-  async confirmAddAccount(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
+  async confirmAddAccount(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
-    if (payload?.id !== id || payload?.targetCustomerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const steps: ActionStep[] = [{ name: 'add_migration_account', status: 'SUCCESS' }];
+    if (payload?.id !== id || payload?.targetCustomerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const steps: ActionStep[] = [
+      { name: 'add_migration_account', status: 'SUCCESS' },
+    ];
     try {
       const account = await this.migrations.addAccount(id, {
         sourceUsername: payload.sourceUsername,
@@ -239,16 +290,34 @@ export class CustomerMigrationController {
         targetServiceId: account.targetServiceId,
         createdAt: account.createdAt,
       };
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'add_migration_account', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'add_migration_account',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/plan/prepare')
   @HttpCode(HttpStatus.OK)
-  async preparePlan(@Req() req: any, @Param('id') id: string, @Body() body: { reason?: string }) {
+  async preparePlan(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
     await this.migrations.getJobForCustomer(customer.id, id);
     const actor = this.getActor(req, body?.reason);
@@ -267,14 +336,26 @@ export class CustomerMigrationController {
 
   @Post(':id/plan/confirm')
   @HttpCode(HttpStatus.OK)
-  async confirmPlan(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
+  async confirmPlan(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
-    if (payload?.id !== id || payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (payload?.id !== id || payload?.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'plan_migration', status: 'SUCCESS' }];
     try {
-      const stepsResult = await this.migrations.planJobForCustomer(customer.id, id);
+      const stepsResult = await this.migrations.planJobForCustomer(
+        customer.id,
+        id,
+      );
       const result = stepsResult.map((step) => ({
         id: step.id,
         name: step.name,
@@ -282,16 +363,34 @@ export class CustomerMigrationController {
         createdAt: step.createdAt,
         updatedAt: step.updatedAt,
       }));
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'plan_migration', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'plan_migration',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/run-next/prepare')
   @HttpCode(HttpStatus.OK)
-  async prepareRunNext(@Req() req: any, @Param('id') id: string, @Body() body: { reason?: string }) {
+  async prepareRunNext(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
     await this.migrations.getJobForCustomer(customer.id, id);
     const actor = this.getActor(req, body?.reason);
@@ -310,14 +409,26 @@ export class CustomerMigrationController {
 
   @Post(':id/run-next/confirm')
   @HttpCode(HttpStatus.OK)
-  async confirmRunNext(@Req() req: any, @Param('id') id: string, @Body() body: { intentId: string; token: string }) {
+  async confirmRunNext(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+  ) {
     const customer = await this.getCustomerForUser(req);
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
-    if (payload?.id !== id || payload?.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (payload?.id !== id || payload?.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const steps: ActionStep[] = [{ name: 'run_next_step', status: 'SUCCESS' }];
     try {
-      const result = await this.migrations.runNextStepForCustomer(customer.id, id);
+      const result = await this.migrations.runNextStepForCustomer(
+        customer.id,
+        id,
+      );
       const mapped = {
         job: {
           id: result.job.id,
@@ -331,10 +442,24 @@ export class CustomerMigrationController {
             }
           : null,
       };
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: mapped });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: mapped,
+      });
     } catch (e) {
-      steps[0] = { name: 'run_next_step', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'run_next_step',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 }

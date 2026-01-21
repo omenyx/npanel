@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { randomBytes, createHash } from 'node:crypto';
@@ -84,7 +88,7 @@ export class GovernanceService {
       reason: input.actor?.reason ?? null,
     } as any);
 
-    const audit = await this.audit.save({
+    await this.audit.save({
       module: input.module,
       action: input.action,
       phase: 'confirmation',
@@ -116,7 +120,12 @@ export class GovernanceService {
         targetKey: input.targetKey,
         impactedSubsystems: input.impactedSubsystems,
         reversibility: input.reversibility,
-        risk: input.risk === 'high' ? 'High' : input.risk === 'medium' ? 'Medium' : 'Low',
+        risk:
+          input.risk === 'high'
+            ? 'High'
+            : input.risk === 'medium'
+              ? 'Medium'
+              : 'Low',
       },
     };
   }
@@ -132,10 +141,18 @@ export class GovernanceService {
   ): Promise<ActionIntentEntity> {
     const intent = await this.intents.findOne({ where: { id: intentId } });
     if (!intent) throw new NotFoundException('Action intent not found');
-    if (intent.status !== 'prepared') throw new BadRequestException('Action intent is not pending confirmation');
+    if (intent.status !== 'prepared')
+      throw new BadRequestException(
+        'Action intent is not pending confirmation',
+      );
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    if (intent.token !== tokenHash) throw new BadRequestException('Invalid confirmation token');
-    if (expectedActor?.actorId && intent.actorId && intent.actorId !== expectedActor.actorId) {
+    if (intent.token !== tokenHash)
+      throw new BadRequestException('Invalid confirmation token');
+    if (
+      expectedActor?.actorId &&
+      intent.actorId &&
+      intent.actorId !== expectedActor.actorId
+    ) {
       throw new BadRequestException('Action intent actor mismatch');
     }
     if (intent.tokenExpiresAt.getTime() < Date.now()) {
@@ -165,7 +182,11 @@ export class GovernanceService {
     input.intent.payload = '';
     await this.intents.save(input.intent as any);
     const outcome =
-      input.status === 'SUCCESS' ? 'success' : input.status === 'PARTIAL_SUCCESS' ? 'partial' : 'failed';
+      input.status === 'SUCCESS'
+        ? 'success'
+        : input.status === 'PARTIAL_SUCCESS'
+          ? 'partial'
+          : 'failed';
     const audit = await this.audit.save({
       module: input.intent.module,
       action: input.intent.action,
@@ -195,7 +216,13 @@ export class GovernanceService {
     const now = Date.now();
     const expiredCutoff = new Date(now - 24 * 60 * 60 * 1000); // 24h for expired
     const confirmedCutoff = new Date(now - 7 * 24 * 60 * 60 * 1000); // 7d for confirmed
-    await this.intents.delete({ status: 'expired', updatedAt: LessThan(expiredCutoff) } as any);
-    await this.intents.delete({ status: 'confirmed', updatedAt: LessThan(confirmedCutoff) } as any);
+    await this.intents.delete({
+      status: 'expired',
+      updatedAt: LessThan(expiredCutoff),
+    } as any);
+    await this.intents.delete({
+      status: 'confirmed',
+      updatedAt: LessThan(confirmedCutoff),
+    } as any);
   }
 }

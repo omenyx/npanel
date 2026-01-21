@@ -30,4 +30,3 @@ export class MigrationSourceController {
     return this.migrations.discoverSourceAccounts(body as any);
   }
 }
-

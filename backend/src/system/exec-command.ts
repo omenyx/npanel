@@ -50,7 +50,10 @@ export function execCommand(
             finish({
               code: 124,
               stdout,
-              stderr: stderr.length > 0 ? `${stderr}\ncommand_timeout` : 'command_timeout',
+              stderr:
+                stderr.length > 0
+                  ? `${stderr}\ncommand_timeout`
+                  : 'command_timeout',
               timedOut: true,
             });
           }, timeoutMs)
@@ -61,4 +64,3 @@ export function execCommand(
     });
   });
 }
-

@@ -36,7 +36,7 @@ export class HostingController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() body: CreateHostingServiceDto, @Req() req: Request) {
+  create() {
     throw new Error('Create account requires prepare and confirm');
   }
 
@@ -62,85 +62,130 @@ export class HostingController {
 
   @Post(':id/provision')
   @HttpCode(HttpStatus.OK)
-  async provision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+  provision() {
     throw new Error('Provision requires prepare and confirm');
   }
 
   @Post(':id/suspend')
   @HttpCode(HttpStatus.OK)
-  async suspend(@Param('id') id: string, @Req() req: Request) {
+  suspend() {
     throw new Error('Suspend requires prepare and confirm');
   }
 
   @Post(':id/unsuspend')
   @HttpCode(HttpStatus.OK)
-  async unsuspend(@Param('id') id: string, @Req() req: Request) {
+  unsuspend() {
     throw new Error('Unsuspend requires prepare and confirm');
   }
 
   @Post(':id/soft-delete')
   @HttpCode(HttpStatus.OK)
-  async softDelete(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+  softDelete() {
     throw new Error('Soft delete requires prepare and confirm');
   }
 
   @Post(':id/restore')
   @HttpCode(HttpStatus.OK)
-  async restore(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+  restore() {
     throw new Error('Restore requires prepare and confirm');
   }
 
   @Post(':id/terminate')
   @HttpCode(HttpStatus.OK)
-  async terminate(@Param('id') id: string) {
+  terminate() {
     throw new Error('Termination requires prepare and confirm');
   }
 
   @Post(':id/terminate/prepare')
   @HttpCode(HttpStatus.OK)
-  async terminatePrepare(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async terminatePrepare(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const result = await this.hosting.terminatePrepare(id, meta);
     return result;
   }
 
   @Post(':id/terminate/confirm')
   @HttpCode(HttpStatus.OK)
-  async terminateConfirm(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
+  async terminateConfirm(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
     const token = typeof body?.token === 'string' ? body.token : '';
     const purge = body?.purge === true;
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
-    const service = await this.hosting.terminateConfirm(id, token, { purge, meta });
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
+    const service = await this.hosting.terminateConfirm(id, token, {
+      purge,
+      meta,
+    });
     return service;
   }
 
   @Post(':id/terminate/cancel')
   @HttpCode(HttpStatus.OK)
-  async terminateCancel(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async terminateCancel(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.terminateCancel(id, meta);
     return service;
   }
 
   @Post(':id/credentials/init')
   @HttpCode(HttpStatus.OK)
-  async initCredentials(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    throw new Error('Credential init requires prepare and confirm');
+  initCredentials() {
+    throw new Error('Credentials init requires prepare and confirm');
   }
 
   @Post('prepare-create')
   @HttpCode(HttpStatus.OK)
-  async prepareCreate(@Body() body: CreateHostingServiceDto, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof (body as any)?.reason === 'string' ? (body as any).reason : undefined };
+  async prepareCreate(
+    @Body() body: CreateHostingServiceDto,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason:
+        typeof (body as any)?.reason === 'string'
+          ? (body as any).reason
+          : undefined,
+    };
     const planName = body.planName ?? 'basic';
     const plan = await this.hosting.getPlan(planName);
     if (!plan) {
       throw new Error(`Hosting plan '${planName}' not found`);
     }
     const services = await this.hosting.list();
-    const existing = services.find((s) => s.primaryDomain === body.primaryDomain);
+    const existing = services.find(
+      (s) => s.primaryDomain === body.primaryDomain,
+    );
     if (existing && existing.status !== 'terminated') {
-      throw new Error(`Hosting service for domain '${body.primaryDomain}' already exists`);
+      throw new Error(
+        `Hosting service for domain '${body.primaryDomain}' already exists`,
+      );
     }
     return this.governance.prepare({
       module: 'hosting',
@@ -150,31 +195,81 @@ export class HostingController {
       payload: body as any,
       risk: 'high',
       reversibility: 'reversible',
-      impactedSubsystems: ['control_plane_db', 'linux_users', 'nginx', 'php_fpm', 'dns', 'mail', 'mysql', 'ftp'],
+      impactedSubsystems: [
+        'control_plane_db',
+        'linux_users',
+        'nginx',
+        'php_fpm',
+        'dns',
+        'mail',
+        'mysql',
+        'ftp',
+      ],
       actor,
     });
   }
 
   @Post('confirm-create')
   @HttpCode(HttpStatus.OK)
-  async confirmCreate(@Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
-    const steps: ActionStep[] = [{ name: 'create_and_provision', status: 'SUCCESS' }];
+  async confirmCreate(
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
+    const steps: ActionStep[] = [
+      { name: 'create_and_provision', status: 'SUCCESS' },
+    ];
     try {
       const result = await this.hosting.create(intent.payload as any, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'create_and_provision', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'create_and_provision',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-provision')
   @HttpCode(HttpStatus.OK)
-  async prepareProvision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareProvision(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.get(id);
     if (service.status === 'active') {
       throw new Error('Service already active');
@@ -188,43 +283,101 @@ export class HostingController {
       payload: { id, returnCredentials } as any,
       risk: 'high',
       reversibility: 'reversible',
-      impactedSubsystems: ['linux_users', 'nginx', 'php_fpm', 'dns', 'mail', 'mysql', 'ftp'],
+      impactedSubsystems: [
+        'linux_users',
+        'nginx',
+        'php_fpm',
+        'dns',
+        'mail',
+        'mysql',
+        'ftp',
+      ],
       actor,
     });
   }
 
   @Post(':id/confirm-provision')
   @HttpCode(HttpStatus.OK)
-  async confirmProvision(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmProvision(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
-    const returnCredentials = (intent.payload as any)?.returnCredentials === true;
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
+    const returnCredentials =
+      (intent.payload as any)?.returnCredentials === true;
     const steps: ActionStep[] = [{ name: 'provision', status: 'SUCCESS' }];
     try {
       const result = returnCredentials
         ? await this.hosting.provisionWithCredentials(id, meta)
         : await this.hosting.provision(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'provision', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'provision',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/resume-provision')
   @HttpCode(HttpStatus.OK)
-  async resumeProvision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async resumeProvision(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.resumeProvision(id, meta);
     return service;
   }
 
   @Post(':id/prepare-retry-provision')
   @HttpCode(HttpStatus.OK)
-  async prepareRetryProvision(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareRetryProvision(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     return this.governance.prepare({
       module: 'hosting',
       action: 'retry_provision',
@@ -233,32 +386,83 @@ export class HostingController {
       payload: { id } as any,
       risk: 'high',
       reversibility: 'irreversible',
-      impactedSubsystems: ['control_plane_db', 'linux_users', 'nginx', 'php_fpm', 'dns', 'mail', 'mysql', 'ftp'],
+      impactedSubsystems: [
+        'control_plane_db',
+        'linux_users',
+        'nginx',
+        'php_fpm',
+        'dns',
+        'mail',
+        'mysql',
+        'ftp',
+      ],
       actor,
     });
   }
 
   @Post(':id/confirm-retry-provision')
   @HttpCode(HttpStatus.OK)
-  async confirmRetryProvision(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmRetryProvision(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
-    const steps: ActionStep[] = [{ name: 'retry_provision', status: 'SUCCESS' }];
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
+    const steps: ActionStep[] = [
+      { name: 'retry_provision', status: 'SUCCESS' },
+    ];
     try {
       const result = await this.hosting.retryProvision(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'retry_provision', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'retry_provision',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-suspend')
   @HttpCode(HttpStatus.OK)
-  async prepareSuspend(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareSuspend(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.get(id);
     if (service.status !== 'active') throw new Error('Service not active');
     return this.governance.prepare({
@@ -276,27 +480,68 @@ export class HostingController {
 
   @Post(':id/confirm-suspend')
   @HttpCode(HttpStatus.OK)
-  async confirmSuspend(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmSuspend(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
     const steps: ActionStep[] = [{ name: 'suspend', status: 'SUCCESS' }];
     try {
       const result = await this.hosting.suspend(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'suspend', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'suspend',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-unsuspend')
   @HttpCode(HttpStatus.OK)
-  async prepareUnsuspend(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareUnsuspend(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.get(id);
-    if (service.status !== 'suspended') throw new Error('Service not suspended');
+    if (service.status !== 'suspended')
+      throw new Error('Service not suspended');
     return this.governance.prepare({
       module: 'hosting',
       action: 'unsuspend',
@@ -312,27 +557,68 @@ export class HostingController {
 
   @Post(':id/confirm-unsuspend')
   @HttpCode(HttpStatus.OK)
-  async confirmUnsuspend(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmUnsuspend(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
     const steps: ActionStep[] = [{ name: 'unsuspend', status: 'SUCCESS' }];
     try {
       const result = await this.hosting.unsuspend(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'unsuspend', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'unsuspend',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-soft-delete')
   @HttpCode(HttpStatus.OK)
-  async prepareSoftDelete(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareSoftDelete(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.get(id);
-    if (service.status !== 'active') throw new Error('Soft delete allowed only for active services');
+    if (service.status !== 'active')
+      throw new Error('Soft delete allowed only for active services');
     return this.governance.prepare({
       module: 'hosting',
       action: 'soft_delete',
@@ -348,27 +634,68 @@ export class HostingController {
 
   @Post(':id/confirm-soft-delete')
   @HttpCode(HttpStatus.OK)
-  async confirmSoftDelete(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmSoftDelete(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
     const steps: ActionStep[] = [{ name: 'soft_delete', status: 'SUCCESS' }];
     try {
       const result = await this.hosting.softDelete(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'soft_delete', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'soft_delete',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-restore')
   @HttpCode(HttpStatus.OK)
-  async prepareRestore(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareRestore(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     const service = await this.hosting.get(id);
-    if (service.status !== 'soft_deleted') throw new Error('Restore allowed only for soft-deleted services');
+    if (service.status !== 'soft_deleted')
+      throw new Error('Restore allowed only for soft-deleted services');
     return this.governance.prepare({
       module: 'hosting',
       action: 'restore',
@@ -384,25 +711,65 @@ export class HostingController {
 
   @Post(':id/confirm-restore')
   @HttpCode(HttpStatus.OK)
-  async confirmRestore(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmRestore(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
     const steps: ActionStep[] = [{ name: 'restore', status: 'SUCCESS' }];
     try {
       const result = await this.hosting.restore(id, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'restore', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'restore',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
   @Post(':id/prepare-credentials-init')
   @HttpCode(HttpStatus.OK)
-  async prepareInitCredentials(@Param('id') id: string, @Body() body: any, @Req() req: Request) {
-    const actor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+  async prepareInitCredentials(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    const actor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     await this.hosting.get(id);
     return this.governance.prepare({
       module: 'hosting',
@@ -411,8 +778,12 @@ export class HostingController {
       targetKey: id,
       payload: {
         id,
-        mailboxPassword: typeof body?.mailboxPassword === 'string' ? body.mailboxPassword : undefined,
-        ftpPassword: typeof body?.ftpPassword === 'string' ? body.ftpPassword : undefined,
+        mailboxPassword:
+          typeof body?.mailboxPassword === 'string'
+            ? body.mailboxPassword
+            : undefined,
+        ftpPassword:
+          typeof body?.ftpPassword === 'string' ? body.ftpPassword : undefined,
       } as any,
       risk: 'high',
       reversibility: 'requires_restore',
@@ -423,22 +794,65 @@ export class HostingController {
 
   @Post(':id/confirm-credentials-init')
   @HttpCode(HttpStatus.OK)
-  async confirmInitCredentials(@Param('id') id: string, @Body() body: { intentId: string; token: string }, @Req() req: Request) {
-    const expectedActor = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, expectedActor);
+  async confirmInitCredentials(
+    @Param('id') id: string,
+    @Body() body: { intentId: string; token: string },
+    @Req() req: Request,
+  ) {
+    const expectedActor = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      expectedActor,
+    );
     if (intent.targetKey !== id) throw new Error('Intent target mismatch');
-    const meta = { actorId: (req as any)?.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: intent.reason ?? undefined };
-    const steps: ActionStep[] = [{ name: 'init_credentials', status: 'SUCCESS' }];
+    const meta = {
+      actorId: (req as any)?.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: intent.reason ?? undefined,
+    };
+    const steps: ActionStep[] = [
+      { name: 'init_credentials', status: 'SUCCESS' },
+    ];
     try {
       const payload = intent.payload as any;
-      const result = await this.hosting.initCredentials(id, {
-        mailboxPassword: typeof payload?.mailboxPassword === 'string' ? payload.mailboxPassword : undefined,
-        ftpPassword: typeof payload?.ftpPassword === 'string' ? payload.ftpPassword : undefined,
-      }, meta);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      const result = await this.hosting.initCredentials(
+        id,
+        {
+          mailboxPassword:
+            typeof payload?.mailboxPassword === 'string'
+              ? payload.mailboxPassword
+              : undefined,
+          ftpPassword:
+            typeof payload?.ftpPassword === 'string'
+              ? payload.ftpPassword
+              : undefined,
+        },
+        meta,
+      );
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'init_credentials', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'init_credentials',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 }

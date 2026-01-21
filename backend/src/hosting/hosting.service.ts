@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -39,8 +40,6 @@ import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { buildSafeExecEnv } from '../system/exec-env';
 import { decryptString, encryptString } from '../system/secretbox';
-
-const execAsync = promisify(exec);
 
 type ActionMeta = {
   actorId?: string;
@@ -93,6 +92,8 @@ type ProvisioningCredentials = {
 
 @Injectable()
 export class HostingService implements OnModuleInit {
+  private readonly logger = new Logger(HostingService.name);
+
   constructor(
     @InjectRepository(HostingServiceEntity)
     private readonly services: Repository<HostingServiceEntity>,
@@ -153,7 +154,9 @@ export class HostingService implements OnModuleInit {
   async createPlan(input: any): Promise<HostingPlan> {
     const exists = await this.plans.findOne({ where: { name: input.name } });
     if (exists) {
-      throw new BadRequestException(`Hosting plan '${input.name}' already exists`);
+      throw new BadRequestException(
+        `Hosting plan '${input.name}' already exists`,
+      );
     }
     const plan = this.plans.create(input);
     return this.plans.save(plan) as unknown as HostingPlan;
@@ -166,7 +169,9 @@ export class HostingService implements OnModuleInit {
     }
     const inUse = await this.services.count({ where: { planName: name } });
     if (inUse > 0) {
-      throw new BadRequestException(`Cannot delete plan '${name}' because it is used by ${inUse} service(s)`);
+      throw new BadRequestException(
+        `Cannot delete plan '${name}' because it is used by ${inUse} service(s)`,
+      );
     }
     await this.plans.delete({ name });
     return { deleted: true };
@@ -183,13 +188,30 @@ export class HostingService implements OnModuleInit {
     });
   }
 
-  async create(input: CreateHostingServiceDto, meta?: ActionMeta): Promise<HostingServiceEntity | { service: HostingServiceEntity; credentials: { username: string; mysqlUsername: string; mysqlPassword: string; mailboxPassword: string; ftpPassword: string } }> {
+  async create(
+    input: CreateHostingServiceDto,
+    meta?: ActionMeta,
+  ): Promise<
+    | HostingServiceEntity
+    | {
+        service: HostingServiceEntity;
+        credentials: {
+          username: string;
+          mysqlUsername: string;
+          mysqlPassword: string;
+          mailboxPassword: string;
+          ftpPassword: string;
+        };
+      }
+  > {
     const planName = input.planName ?? 'basic';
     const plan = await this.plans.findOne({ where: { name: planName } });
     if (!plan) {
       throw new BadRequestException(`Hosting plan '${planName}' not found`);
     }
-    const existsForDomain = await this.services.findOne({ where: { primaryDomain: input.primaryDomain } });
+    const existsForDomain = await this.services.findOne({
+      where: { primaryDomain: input.primaryDomain },
+    });
     if (existsForDomain) {
       if (existsForDomain.status === 'terminated') {
         await this.services.delete({ id: existsForDomain.id } as any);
@@ -200,7 +222,9 @@ export class HostingService implements OnModuleInit {
       }
     }
     if (!input.customerId && !input.customer) {
-      throw new BadRequestException('Either customerId or customer must be provided');
+      throw new BadRequestException(
+        'Either customerId or customer must be provided',
+      );
     }
     let customerId = input.customerId ?? null;
     if (!customerId && input.customer) {
@@ -224,7 +248,9 @@ export class HostingService implements OnModuleInit {
     const safe = base.replace(/[^a-z0-9]/g, '').slice(0, 8) || 'site';
     const systemUsername = `u_${safe}`;
     const mysqlUsername = `${systemUsername}_db`;
-    const existsForUsername = await this.services.findOne({ where: { systemUsername } });
+    const existsForUsername = await this.services.findOne({
+      where: { systemUsername },
+    });
     if (existsForUsername) {
       throw new BadRequestException(
         `Derived system username '${systemUsername}' is already in use`,
@@ -296,14 +322,23 @@ export class HostingService implements OnModuleInit {
     });
   }
 
-  async provision(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+  async provision(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<HostingServiceEntity> {
     this.claimOperation(id);
-    const result = await this.provisionInternal(id, { returnCredentials: false, meta });
+    const result = await this.provisionInternal(id, {
+      returnCredentials: false,
+      meta,
+    });
     this.releaseOperation(id);
     return result.service;
   }
 
-  async provisionWithCredentials(id: string, meta?: ActionMeta): Promise<{
+  async provisionWithCredentials(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<{
     service: HostingServiceEntity;
     credentials: {
       username: string;
@@ -314,7 +349,10 @@ export class HostingService implements OnModuleInit {
     };
   }> {
     this.claimOperation(id);
-    const result = await this.provisionInternal(id, { returnCredentials: true, meta });
+    const result = await this.provisionInternal(id, {
+      returnCredentials: true,
+      meta,
+    });
     this.releaseOperation(id);
     if (!result.credentials) {
       throw new Error('credentials_unavailable');
@@ -348,7 +386,8 @@ export class HostingService implements OnModuleInit {
       );
     }
     const context = this.buildAdapterContext(service);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
 
     const mailRequired = Number(plan.maxMailboxes ?? 0) > 0;
@@ -360,7 +399,10 @@ export class HostingService implements OnModuleInit {
         `postmaster@${service.primaryDomain}`,
       );
     }
-    await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
+    await this.webServerAdapter.ensureVhostAbsent(
+      context,
+      service.primaryDomain,
+    );
     await this.phpFpmAdapter.ensurePoolAbsent(context, username);
     await this.mysqlAdapter.ensureAccountAbsent(context, `${username}_db`);
     await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
@@ -381,7 +423,10 @@ export class HostingService implements OnModuleInit {
     await this.services.save(service);
 
     this.claimOperation(id);
-    const result = await this.provisionInternal(id, { returnCredentials: false, meta });
+    const result = await this.provisionInternal(id, {
+      returnCredentials: false,
+      meta,
+    });
     this.releaseOperation(id);
     return result.service;
   }
@@ -436,11 +481,16 @@ export class HostingService implements OnModuleInit {
   ): ProvisionPhase[] {
     if (!service.provisioningCompletedPhasesJson) return [];
     try {
-      const parsed = JSON.parse(service.provisioningCompletedPhasesJson) as unknown;
+      const parsed = JSON.parse(
+        service.provisioningCompletedPhasesJson,
+      ) as unknown;
       if (!Array.isArray(parsed)) return [];
       const set = new Set<ProvisionPhase>();
       for (const item of parsed) {
-        if (typeof item === 'string' && (PROVISION_PHASES as string[]).includes(item)) {
+        if (
+          typeof item === 'string' &&
+          (PROVISION_PHASES as string[]).includes(item)
+        ) {
           set.add(item as ProvisionPhase);
         }
       }
@@ -482,7 +532,8 @@ export class HostingService implements OnModuleInit {
   ): Promise<HostingServiceEntity> {
     const completed = this.parseCompletedPhases(service);
     if (!completed.includes(phase)) completed.push(phase);
-    service.provisioningCompletedPhasesJson = this.serializeCompletedPhases(completed);
+    service.provisioningCompletedPhasesJson =
+      this.serializeCompletedPhases(completed);
     const next = PROVISION_PHASES.find((p) => !completed.includes(p)) ?? null;
     service.provisioningPhase = next;
     service.provisioningUpdatedAt = new Date();
@@ -497,7 +548,9 @@ export class HostingService implements OnModuleInit {
     service.status = 'error';
     service.provisioningPhase = phase;
     service.provisioningFailedPhase = phase;
-    service.provisioningErrorJson = JSON.stringify(this.buildProvisionError(err));
+    service.provisioningErrorJson = JSON.stringify(
+      this.buildProvisionError(err),
+    );
     service.provisioningUpdatedAt = new Date();
     return this.services.save(service);
   }
@@ -506,7 +559,8 @@ export class HostingService implements OnModuleInit {
     service: HostingServiceEntity,
     plan: HostingPlan,
   ): Promise<ProvisioningCredentials> {
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const mysqlUsername = service.mysqlUsername || `${username}_db`;
 
     const mailRequired = Number(plan.maxMailboxes ?? 0) > 0;
@@ -527,7 +581,9 @@ export class HostingService implements OnModuleInit {
       );
     }
     if (ftpRequired && !service.ftpPasswordEnc) {
-      service.ftpPasswordEnc = encryptString(this.credentials.generateFtpPassword());
+      service.ftpPasswordEnc = encryptString(
+        this.credentials.generateFtpPassword(),
+      );
     }
     service.provisioningUpdatedAt = new Date();
     service = await this.services.save(service);
@@ -539,7 +595,9 @@ export class HostingService implements OnModuleInit {
       mailboxPassword: mailRequired
         ? decryptString(service.mailboxPasswordEnc ?? '')
         : '',
-      ftpPassword: ftpRequired ? decryptString(service.ftpPasswordEnc ?? '') : '',
+      ftpPassword: ftpRequired
+        ? decryptString(service.ftpPasswordEnc ?? '')
+        : '',
     };
   }
 
@@ -585,7 +643,8 @@ export class HostingService implements OnModuleInit {
     const context = this.buildAdapterContext(service);
     const traceId = context.traceId ?? null;
 
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
     const phpPoolName = username;
     const mysqlUsername = service.mysqlUsername || `${username}_db`;
@@ -669,7 +728,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -689,8 +749,14 @@ export class HostingService implements OnModuleInit {
                 targetKey: service.id,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId, path: documentRoot!, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                details: {
+                  phase,
+                  traceId,
+                  path: documentRoot!,
+                  action: 'rollback',
+                },
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -716,7 +782,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -732,7 +799,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
+              await this.webServerAdapter.ensureVhostAbsent(
+                context,
+                service.primaryDomain,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -742,7 +812,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -756,7 +827,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.mysqlAdapter.ensureAccountAbsent(context, mysqlUsername);
+              await this.mysqlAdapter.ensureAccountAbsent(
+                context,
+                mysqlUsername,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -766,7 +840,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -780,7 +855,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
+              await this.dnsAdapter.ensureZoneAbsent(
+                context,
+                service.primaryDomain,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -790,7 +868,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -806,7 +885,10 @@ export class HostingService implements OnModuleInit {
             });
             rollbacks.push(async () => {
               try {
-                await this.mailAdapter.ensureMailboxAbsent(context, `postmaster@${service.primaryDomain}`);
+                await this.mailAdapter.ensureMailboxAbsent(
+                  context,
+                  `postmaster@${service.primaryDomain}`,
+                );
               } catch (rbErr) {
                 await context.log({
                   adapter: 'hosting',
@@ -816,7 +898,8 @@ export class HostingService implements OnModuleInit {
                   success: false,
                   dryRun: context.dryRun,
                   details: { phase, traceId, action: 'rollback' },
-                  errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                  errorMessage:
+                    rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
             });
@@ -835,16 +918,17 @@ export class HostingService implements OnModuleInit {
               try {
                 await this.ftpAdapter.ensureAccountAbsent(context, username);
               } catch (rbErr) {
-              await context.log({
-                adapter: 'hosting',
-                operation: 'delete',
-                targetKind: 'ftp_account',
-                targetKey: username,
-                success: false,
-                dryRun: context.dryRun,
-                details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
-              });
+                await context.log({
+                  adapter: 'hosting',
+                  operation: 'delete',
+                  targetKind: 'ftp_account',
+                  targetKey: username,
+                  success: false,
+                  dryRun: context.dryRun,
+                  details: { phase, traceId, action: 'rollback' },
+                  errorMessage:
+                    rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                });
               }
             });
           }
@@ -897,7 +981,8 @@ export class HostingService implements OnModuleInit {
           success: false,
           dryRun: context.dryRun,
           details: { action: 'phase_failed', phase, traceId },
-          errorMessage: error instanceof Error ? error.message : 'unknown_error',
+          errorMessage:
+            error instanceof Error ? error.message : 'unknown_error',
         });
         throw error;
       }
@@ -945,7 +1030,8 @@ export class HostingService implements OnModuleInit {
     const context = this.buildAdapterContext(service);
     const traceId = context.traceId ?? null;
 
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
     const phpPoolName = username;
     const mysqlUsername = service.mysqlUsername || `${username}_db`;
@@ -1003,7 +1089,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1023,8 +1110,14 @@ export class HostingService implements OnModuleInit {
                 targetKey: service.id,
                 success: false,
                 dryRun: context.dryRun,
-                details: { phase, traceId, path: documentRoot!, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                details: {
+                  phase,
+                  traceId,
+                  path: documentRoot!,
+                  action: 'rollback',
+                },
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1050,7 +1143,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1066,7 +1160,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
+              await this.webServerAdapter.ensureVhostAbsent(
+                context,
+                service.primaryDomain,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -1076,7 +1173,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1090,7 +1188,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.mysqlAdapter.ensureAccountAbsent(context, mysqlUsername);
+              await this.mysqlAdapter.ensureAccountAbsent(
+                context,
+                mysqlUsername,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -1100,7 +1201,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1114,7 +1216,10 @@ export class HostingService implements OnModuleInit {
           });
           rollbacks.push(async () => {
             try {
-              await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
+              await this.dnsAdapter.ensureZoneAbsent(
+                context,
+                service.primaryDomain,
+              );
             } catch (rbErr) {
               await context.log({
                 adapter: 'hosting',
@@ -1124,7 +1229,8 @@ export class HostingService implements OnModuleInit {
                 success: false,
                 dryRun: context.dryRun,
                 details: { phase, traceId, action: 'rollback' },
-                errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                errorMessage:
+                  rbErr instanceof Error ? rbErr.message : 'rollback_failed',
               });
             }
           });
@@ -1140,7 +1246,10 @@ export class HostingService implements OnModuleInit {
             });
             rollbacks.push(async () => {
               try {
-                await this.mailAdapter.ensureMailboxAbsent(context, `postmaster@${service.primaryDomain}`);
+                await this.mailAdapter.ensureMailboxAbsent(
+                  context,
+                  `postmaster@${service.primaryDomain}`,
+                );
               } catch (rbErr) {
                 await context.log({
                   adapter: 'hosting',
@@ -1150,7 +1259,8 @@ export class HostingService implements OnModuleInit {
                   success: false,
                   dryRun: context.dryRun,
                   details: { phase, traceId, action: 'rollback' },
-                  errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                  errorMessage:
+                    rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
             });
@@ -1177,7 +1287,8 @@ export class HostingService implements OnModuleInit {
                   success: false,
                   dryRun: context.dryRun,
                   details: { phase, traceId, action: 'rollback' },
-                  errorMessage: rbErr instanceof Error ? rbErr.message : 'rollback_failed',
+                  errorMessage:
+                    rbErr instanceof Error ? rbErr.message : 'rollback_failed',
                 });
               }
             });
@@ -1218,8 +1329,7 @@ export class HostingService implements OnModuleInit {
         for (let i = rollbacks.length - 1; i >= 0; i -= 1) {
           try {
             await rollbacks[i]();
-          } catch {
-          }
+          } catch {}
         }
         await context.log({
           adapter: 'hosting',
@@ -1229,7 +1339,8 @@ export class HostingService implements OnModuleInit {
           success: false,
           dryRun: context.dryRun,
           details: { action: 'phase_failed', phase, traceId },
-          errorMessage: error instanceof Error ? error.message : 'unknown_error',
+          errorMessage:
+            error instanceof Error ? error.message : 'unknown_error',
         });
         throw error;
       }
@@ -1242,7 +1353,11 @@ export class HostingService implements OnModuleInit {
     id: string,
     input: { mailboxPassword?: string; ftpPassword?: string },
     meta?: ActionMeta,
-  ): Promise<{ service: HostingServiceEntity; mailboxPassword: string; ftpPassword: string }> {
+  ): Promise<{
+    service: HostingServiceEntity;
+    mailboxPassword: string;
+    ftpPassword: string;
+  }> {
     let service = await this.get(id);
     const planName = service.planName ?? 'basic';
     const plan = await this.plans.findOne({ where: { name: planName } });
@@ -1263,7 +1378,8 @@ export class HostingService implements OnModuleInit {
       );
     }
     const context = this.buildAdapterContext(service);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const mailboxPassword = mailEnabled
       ? input.mailboxPassword || this.credentials.generateMailboxPassword()
       : '';
@@ -1320,7 +1436,8 @@ export class HostingService implements OnModuleInit {
       return service;
     }
     const context = this.buildAdapterContext(service);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     await this.userAdapter.ensureSuspended(context, username);
     await this.webServerAdapter.ensureVhostSuspended(
       context,
@@ -1348,43 +1465,72 @@ export class HostingService implements OnModuleInit {
     return saved;
   }
 
-  async softDelete(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+  async softDelete(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<HostingServiceEntity> {
     this.claimOperation(id);
     const service = await this.get(id);
     if (service.status !== 'active') {
-      throw new BadRequestException('Soft delete is only allowed for active services');
+      throw new BadRequestException(
+        'Soft delete is only allowed for active services',
+      );
     }
     const context = this.buildAdapterContext(service);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
 
     await this.userAdapter.ensureSuspended(context, username);
-    await this.webServerAdapter.ensureVhostSuspended(context, service.primaryDomain);
+    await this.webServerAdapter.ensureVhostSuspended(
+      context,
+      service.primaryDomain,
+    );
 
     const mailboxRotatePassword = this.credentials.generateMailboxPassword();
     const mysqlRotatePassword = this.credentials.generateDatabasePassword();
     const ftpRotatePassword = this.credentials.generateFtpPassword();
     const mysqlUsername = `${username}_db`;
-    const mailboxes = await this.mailAdapter.listMailboxes(context, service.primaryDomain);
+    const mailboxes = await this.mailAdapter.listMailboxes(
+      context,
+      service.primaryDomain,
+    );
     for (const address of mailboxes) {
-      if (typeof address === 'string' && address.endsWith(`@${service.primaryDomain}`)) {
-        await this.mailAdapter.updatePassword(context, address, mailboxRotatePassword);
+      if (
+        typeof address === 'string' &&
+        address.endsWith(`@${service.primaryDomain}`)
+      ) {
+        await this.mailAdapter.updatePassword(
+          context,
+          address,
+          mailboxRotatePassword,
+        );
       }
     }
-    await this.mysqlAdapter.resetPassword(context, mysqlUsername, mysqlRotatePassword);
+    await this.mysqlAdapter.resetPassword(
+      context,
+      mysqlUsername,
+      mysqlRotatePassword,
+    );
     await this.ftpAdapter.resetPassword(context, username, ftpRotatePassword);
 
     const retentionHoursRaw = process.env.NPANEL_SOFT_DELETE_RETENTION_HOURS;
     const retentionHours =
-      typeof retentionHoursRaw === 'string' && retentionHoursRaw.trim().length > 0
+      typeof retentionHoursRaw === 'string' &&
+      retentionHoursRaw.trim().length > 0
         ? Number.parseInt(retentionHoursRaw, 10)
         : 168;
-    const hours = Number.isFinite(retentionHours) && retentionHours >= 1 ? retentionHours : 168;
+    const hours =
+      Number.isFinite(retentionHours) && retentionHours >= 1
+        ? retentionHours
+        : 168;
     service.status = 'soft_deleted';
     service.mailboxPasswordEnc = encryptString(mailboxRotatePassword);
     service.mysqlPasswordEnc = encryptString(mysqlRotatePassword);
     service.ftpPasswordEnc = encryptString(ftpRotatePassword);
     service.softDeletedAt = new Date();
-    service.hardDeleteEligibleAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+    service.hardDeleteEligibleAt = new Date(
+      Date.now() + hours * 60 * 60 * 1000,
+    );
     const saved = await this.services.save(service);
     await context.log({
       adapter: 'hosting',
@@ -1411,10 +1557,13 @@ export class HostingService implements OnModuleInit {
     this.claimOperation(id);
     const service = await this.get(id);
     if (service.status !== 'soft_deleted') {
-      throw new BadRequestException('Restore is only allowed for soft-deleted services');
+      throw new BadRequestException(
+        'Restore is only allowed for soft-deleted services',
+      );
     }
     const context = this.buildAdapterContext(service);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     await this.userAdapter.ensureResumed(context, username);
     await this.webServerAdapter.ensureVhostPresent(context, {
       domain: service.primaryDomain,
@@ -1446,7 +1595,10 @@ export class HostingService implements OnModuleInit {
     return saved;
   }
 
-  async unsuspend(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+  async unsuspend(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<HostingServiceEntity> {
     this.claimOperation(id);
     const service = await this.get(id);
     if (service.status !== 'suspended') {
@@ -1456,14 +1608,16 @@ export class HostingService implements OnModuleInit {
     const username = this.deriveSystemUsername(service);
     await this.userAdapter.ensureResumed(context, username);
     // For web server, ensureVhostPresent (idempotent) re-creates the symlink if missing
-    const plan = await this.plans.findOne({ where: { name: service.planName || 'basic' } });
+    const plan = await this.plans.findOne({
+      where: { name: service.planName || 'basic' },
+    });
     if (plan) {
-       await this.webServerAdapter.ensureVhostPresent(context, {
-          domain: service.primaryDomain,
-          documentRoot: `/home/${username}/public_html`,
-          phpFpmPool: username,
-          sslCertificateId: null,
-       });
+      await this.webServerAdapter.ensureVhostPresent(context, {
+        domain: service.primaryDomain,
+        documentRoot: `/home/${username}/public_html`,
+        phpFpmPool: username,
+        sslCertificateId: null,
+      });
     }
 
     service.status = 'active';
@@ -1488,17 +1642,23 @@ export class HostingService implements OnModuleInit {
     return saved;
   }
 
-  async terminate(id: string): Promise<HostingServiceEntity> {
+  async terminate(): Promise<HostingServiceEntity> {
     throw new BadRequestException('Termination requires prepare and confirm');
   }
 
-  async terminatePrepare(id: string, meta?: ActionMeta): Promise<{ token: string; service: HostingServiceEntity }> {
+  async terminatePrepare(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<{ token: string; service: HostingServiceEntity }> {
     this.claimOperation(id);
     const service = await this.get(id);
     if (service.status !== 'soft_deleted') {
       throw new BadRequestException('Hard delete requires soft delete first');
     }
-    if (service.hardDeleteEligibleAt && service.hardDeleteEligibleAt.getTime() > Date.now()) {
+    if (
+      service.hardDeleteEligibleAt &&
+      service.hardDeleteEligibleAt.getTime() > Date.now()
+    ) {
       throw new BadRequestException('Hard delete blocked by retention window');
     }
     const token = randomBytes(24).toString('hex');
@@ -1594,7 +1754,9 @@ export class HostingService implements OnModuleInit {
           },
           errorMessage: 'backup_snapshot_failed',
         });
-        throw new BadRequestException('Hard delete blocked: backup snapshot failed');
+        throw new BadRequestException(
+          'Hard delete blocked: backup snapshot failed',
+        );
       }
       await context.log({
         adapter: 'backup_shell',
@@ -1618,7 +1780,10 @@ export class HostingService implements OnModuleInit {
       `postmaster@${service.primaryDomain}`,
     ]);
     if (purge) {
-      const mailboxes = await this.mailAdapter.listMailboxes(context, service.primaryDomain);
+      const mailboxes = await this.mailAdapter.listMailboxes(
+        context,
+        service.primaryDomain,
+      );
       for (const address of mailboxes) {
         if (typeof address === 'string' && address.includes('@')) {
           mailboxesToDelete.add(address);
@@ -1628,7 +1793,10 @@ export class HostingService implements OnModuleInit {
     for (const address of mailboxesToDelete) {
       await this.mailAdapter.ensureMailboxAbsent(context, address);
     }
-    await this.webServerAdapter.ensureVhostAbsent(context, service.primaryDomain);
+    await this.webServerAdapter.ensureVhostAbsent(
+      context,
+      service.primaryDomain,
+    );
     await this.phpFpmAdapter.ensurePoolAbsent(context, phpPoolName);
     await this.mysqlAdapter.ensureAccountAbsent(context, mysqlUsername);
     await this.dnsAdapter.ensureZoneAbsent(context, service.primaryDomain);
@@ -1662,7 +1830,10 @@ export class HostingService implements OnModuleInit {
     return saved;
   }
 
-  async terminateCancel(id: string, meta?: ActionMeta): Promise<HostingServiceEntity> {
+  async terminateCancel(
+    id: string,
+    meta?: ActionMeta,
+  ): Promise<HostingServiceEntity> {
     this.claimOperation(id);
     const service = await this.get(id);
     if (service.status !== 'soft_deleted') {
@@ -1698,14 +1869,20 @@ export class HostingService implements OnModuleInit {
     return this.mailAdapter.listMailboxes(context, service.primaryDomain);
   }
 
-  async updateMailboxPassword(id: string, address: string, password: string): Promise<void> {
+  async updateMailboxPassword(
+    id: string,
+    address: string,
+    password: string,
+  ): Promise<void> {
     const service = await this.get(id);
     if (service.status !== 'active') {
       throw new BadRequestException('Service is not active');
     }
     const context = this.buildAdapterContext(service);
     if (!address.endsWith(`@${service.primaryDomain}`)) {
-      throw new BadRequestException(`Mailbox '${address}' does not belong to domain '${service.primaryDomain}'`);
+      throw new BadRequestException(
+        `Mailbox '${address}' does not belong to domain '${service.primaryDomain}'`,
+      );
     }
 
     if (password.length < 8) {
@@ -1730,7 +1907,11 @@ export class HostingService implements OnModuleInit {
     }
 
     const localPart = input.localPart.trim().toLowerCase();
-    if (!/^[a-z0-9._-]+$/.test(localPart) || localPart.length < 1 || localPart.length > 64) {
+    if (
+      !/^[a-z0-9._-]+$/.test(localPart) ||
+      localPart.length < 1 ||
+      localPart.length > 64
+    ) {
       throw new BadRequestException('Invalid mailbox name');
     }
     if (input.password.length < 8) {
@@ -1767,28 +1948,37 @@ export class HostingService implements OnModuleInit {
   async listDatabases(id: string): Promise<string[]> {
     const service = await this.get(id);
     const context = this.buildAdapterContext(service);
-    const mysqlUsername = service.mysqlUsername || `${(service.systemUsername || this.deriveSystemUsername(service))}_db`;
+    const mysqlUsername =
+      service.mysqlUsername ||
+      `${service.systemUsername || this.deriveSystemUsername(service)}_db`;
     return this.mysqlAdapter.listDatabases(context, mysqlUsername);
   }
 
   async resetDatabasePassword(id: string, password: string): Promise<void> {
     const service = await this.get(id);
-    if (service.status !== 'active') throw new BadRequestException('Service not active');
+    if (service.status !== 'active')
+      throw new BadRequestException('Service not active');
     const context = this.buildAdapterContext(service);
-    const mysqlUsername = service.mysqlUsername || `${(service.systemUsername || this.deriveSystemUsername(service))}_db`;
+    const mysqlUsername =
+      service.mysqlUsername ||
+      `${service.systemUsername || this.deriveSystemUsername(service)}_db`;
     await this.mysqlAdapter.resetPassword(context, mysqlUsername, password);
   }
 
-  async getFtpCredentials(id: string): Promise<{ username: string; host: string }> {
+  async getFtpCredentials(
+    id: string,
+  ): Promise<{ username: string; host: string }> {
     const service = await this.get(id);
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const host = process.env.NPANEL_HOSTING_DEFAULT_IPV4 || '127.0.0.1';
     return { username, host };
   }
 
   async resetFtpPassword(id: string, password: string): Promise<void> {
     const service = await this.get(id);
-    if (service.status !== 'active') throw new BadRequestException('Service not active');
+    if (service.status !== 'active')
+      throw new BadRequestException('Service not active');
     const context = this.buildAdapterContext(service);
     const username = this.deriveSystemUsername(service);
     await this.ftpAdapter.resetPassword(context, username, password);
@@ -1811,7 +2001,9 @@ export class HostingService implements OnModuleInit {
       log: async (entry) => {
         const redact = (obj: any): any => {
           if (!obj || typeof obj !== 'object') return obj;
-          const clone: any = Array.isArray(obj) ? obj.map((v) => redact(v)) : { ...obj };
+          const clone: any = Array.isArray(obj)
+            ? obj.map((v) => redact(v))
+            : { ...obj };
           for (const k of Object.keys(clone)) {
             if (/(password|secret|token|key)/i.test(k)) {
               clone[k] = '[REDACTED]';
@@ -1840,7 +2032,7 @@ export class HostingService implements OnModuleInit {
         });
         await logsRepo.save(entity);
         if (process.env.NPANEL_HOSTING_LOG === 'json') {
-          console.log(JSON.stringify(payload));
+          this.logger.debug(`Hosting operation logged: ${JSON.stringify(payload)}`);
         }
       },
     };
@@ -1881,7 +2073,9 @@ export class HostingService implements OnModuleInit {
       if (!process.env.NPANEL_MAIL_CMD) {
         missing.push('mail_cmd');
       } else {
-        const mailStatus = await this.tools.statusFor(process.env.NPANEL_MAIL_CMD);
+        const mailStatus = await this.tools.statusFor(
+          process.env.NPANEL_MAIL_CMD,
+        );
         if (!mailStatus.available) missing.push('mail_cmd');
       }
     }
@@ -1889,7 +2083,9 @@ export class HostingService implements OnModuleInit {
       if (!process.env.NPANEL_FTP_CMD) {
         missing.push('ftp_cmd');
       } else {
-        const ftpStatus = await this.tools.statusFor(process.env.NPANEL_FTP_CMD);
+        const ftpStatus = await this.tools.statusFor(
+          process.env.NPANEL_FTP_CMD,
+        );
         if (!ftpStatus.available) missing.push('ftp_cmd');
       }
     }
@@ -1908,20 +2104,22 @@ export class HostingService implements OnModuleInit {
     // 1. Check for quota tools
     const quotaStatus = await this.tools.statusFor('quota');
     const quotaCheckStatus = await this.tools.statusFor('quotacheck');
-    const toolsPresent = !!(quotaStatus.available && quotaCheckStatus.available);
+    const toolsPresent = !!(
+      quotaStatus.available && quotaCheckStatus.available
+    );
 
     // 2. Check mount options in /proc/mounts
     let mountOptions = false;
     try {
       const mounts = await fs.readFile('/proc/mounts', 'utf8');
       // Look for ext4/xfs with usrquota/grpquota on root or home
-      if (
-        /(\/|\/home)\s+\w+\s+.*(usrquota|grpquota|quota).*/.test(mounts)
-      ) {
+      if (/(\/|\/home)\s+\w+\s+.*(usrquota|grpquota|quota).*/.test(mounts)) {
         mountOptions = true;
       }
     } catch (e) {
-      console.warn(`Failed to read /proc/mounts: ${e instanceof Error ? e.message : e}`);
+      this.logger.warn(
+        `Failed to read /proc/mounts: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
 
     // 3. Check kernel support (primitive check)
@@ -1950,7 +2148,8 @@ export class HostingService implements OnModuleInit {
       return;
     }
 
-    const username = service.systemUsername || this.deriveSystemUsername(service);
+    const username =
+      service.systemUsername || this.deriveSystemUsername(service);
     const homeDirectory = `/home/${username}`;
     const documentRoot = `${homeDirectory}/public_html`;
 
@@ -1967,9 +2166,9 @@ export class HostingService implements OnModuleInit {
       missing.push('document_root');
     }
 
-    const safeDomain = service.primaryDomain
-      .toLowerCase()
-      .replace(/[^a-z0-9.-]/g, '') || 'invalid-domain';
+    const safeDomain =
+      service.primaryDomain.toLowerCase().replace(/[^a-z0-9.-]/g, '') ||
+      'invalid-domain';
     const vhostFilename = `${safeDomain}.conf`;
     const vhostAvailableRoot =
       process.env.NPANEL_WEB_VHOST_ROOT || '/etc/nginx/sites-available';
@@ -1989,7 +2188,8 @@ export class HostingService implements OnModuleInit {
     }
 
     const poolRoot = process.env.NPANEL_PHP_FPM_POOL_ROOT || '/etc/php-fpm.d';
-    const poolSafe = username.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'pool';
+    const poolSafe =
+      username.toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'pool';
     const poolPath = `${poolRoot}/${poolSafe}.conf`;
     try {
       await fs.access(poolPath);
@@ -2034,7 +2234,8 @@ export class HostingService implements OnModuleInit {
     const mailRequired = Number(plan.maxMailboxes ?? 0) > 0;
     if (mailRequired) {
       const mailbox = `postmaster@${service.primaryDomain}`;
-      const passwdFile = process.env.NPANEL_DOVECOT_PASSWD_FILE || '/etc/npanel/dovecot-passwd';
+      const passwdFile =
+        process.env.NPANEL_DOVECOT_PASSWD_FILE || '/etc/npanel/dovecot-passwd';
       try {
         const content = await fs.readFile(passwdFile, 'utf8');
         if (!content.split('\n').some((l) => l.startsWith(`${mailbox}:`))) {
@@ -2057,7 +2258,8 @@ export class HostingService implements OnModuleInit {
     const ftpRequired = Number(plan.maxFtpAccounts ?? 0) > 0;
     if (ftpRequired) {
       const ftpPasswdFile =
-        process.env.NPANEL_PUREPW_PASSWD_FILE || '/etc/pure-ftpd/pureftpd.passwd';
+        process.env.NPANEL_PUREPW_PASSWD_FILE ||
+        '/etc/pure-ftpd/pureftpd.passwd';
       try {
         const content = await fs.readFile(ftpPasswdFile, 'utf8');
         if (!content.split('\n').some((l) => l.startsWith(`${username}:`))) {

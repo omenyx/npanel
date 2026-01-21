@@ -1,5 +1,5 @@
 import { ToolResolver } from '../system/tool-resolver';
-import { execCommand, type ExecResult } from '../system/exec-command';
+import { execCommand } from '../system/exec-command';
 import type {
   AdapterContext,
   AdapterOperationResult,

@@ -128,31 +128,19 @@ export class CustomerHostingController {
 
   @Post(':id/mailboxes')
   @HttpCode(HttpStatus.CREATED)
-  async createMailbox(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { localPart: string; password: string },
-  ) {
+  createMailbox() {
     throw new Error('Mailbox create requires prepare and confirm');
   }
 
   @Post(':id/mailboxes/delete')
   @HttpCode(HttpStatus.OK)
-  async deleteMailbox(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { address: string },
-  ) {
+  deleteMailbox() {
     throw new Error('Mailbox delete requires prepare and confirm');
   }
 
   @Post(':id/mailboxes/password')
   @HttpCode(HttpStatus.OK)
-  async updatePassword(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { address: string; password: string },
-  ) {
+  updatePassword() {
     throw new Error('Mailbox password update requires prepare and confirm');
   }
 
@@ -161,18 +149,15 @@ export class CustomerHostingController {
   async listDatabases(@Req() req: any, @Param('id') id: string) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const databases = await this.hosting.listDatabases(id);
     return { databases };
   }
 
   @Post(':id/databases/password')
   @HttpCode(HttpStatus.OK)
-  async resetDatabasePassword(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { password: string },
-  ) {
+  resetDatabasePassword() {
     throw new Error('Database password reset requires prepare and confirm');
   }
 
@@ -181,17 +166,14 @@ export class CustomerHostingController {
   async getFtpCredentials(@Req() req: any, @Param('id') id: string) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     return this.hosting.getFtpCredentials(id);
   }
 
   @Post(':id/ftp/password')
   @HttpCode(HttpStatus.OK)
-  async resetFtpPassword(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() body: { password: string },
-  ) {
+  resetFtpPassword() {
     throw new Error('FTP password reset requires prepare and confirm');
   }
 
@@ -204,14 +186,19 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
       action: 'create_mailbox',
       targetKind: 'mailbox',
       targetKey: `${body.localPart}@${service.primaryDomain}`,
-      payload: { serviceId: id, localPart: body.localPart, password: body.password } as any,
+      payload: {
+        serviceId: id,
+        localPart: body.localPart,
+        password: body.password,
+      } as any,
       risk: 'medium',
       reversibility: 'reversible',
       impactedSubsystems: ['mail'],
@@ -228,17 +215,40 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
-    if ((intent.payload as any)?.serviceId !== id) throw new Error('Intent target mismatch');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
+    if ((intent.payload as any)?.serviceId !== id)
+      throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'create_mailbox', status: 'SUCCESS' }];
     try {
       const payload = intent.payload as any;
-      const result = await this.hosting.createMailbox(id, { localPart: payload.localPart, password: payload.password });
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      const result = await this.hosting.createMailbox(id, {
+        localPart: payload.localPart,
+        password: payload.password,
+      });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'create_mailbox', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'create_mailbox',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
@@ -251,7 +261,8 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
@@ -275,17 +286,36 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
     const steps: ActionStep[] = [{ name: 'delete_mailbox', status: 'SUCCESS' }];
     try {
       await this.hosting.deleteMailbox(id, payload.address);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { success: true } });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { success: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'delete_mailbox', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'delete_mailbox',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
@@ -298,14 +328,19 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'email',
       action: 'update_mailbox_password',
       targetKind: 'mailbox',
       targetKey: body.address,
-      payload: { serviceId: id, address: body.address, password: body.password } as any,
+      payload: {
+        serviceId: id,
+        address: body.address,
+        password: body.password,
+      } as any,
       risk: 'high',
       reversibility: 'requires_restore',
       impactedSubsystems: ['mail'],
@@ -322,17 +357,42 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
-    const steps: ActionStep[] = [{ name: 'update_mailbox_password', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'update_mailbox_password', status: 'SUCCESS' },
+    ];
     try {
-      await this.hosting.updateMailboxPassword(id, payload.address, payload.password);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { success: true } });
+      await this.hosting.updateMailboxPassword(
+        id,
+        payload.address,
+        payload.password,
+      );
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { success: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'update_mailbox_password', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'update_mailbox_password',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
@@ -345,7 +405,8 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'databases',
@@ -369,17 +430,38 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
-    const steps: ActionStep[] = [{ name: 'reset_database_password', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'reset_database_password', status: 'SUCCESS' },
+    ];
     try {
       await this.hosting.resetDatabasePassword(id, payload.password);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { success: true } });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { success: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'reset_database_password', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'reset_database_password',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
@@ -392,7 +474,8 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const actor = this.getActor(req, body?.reason);
     return this.governance.prepare({
       module: 'ftp',
@@ -416,27 +499,48 @@ export class CustomerHostingController {
   ) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, this.getActor(req));
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      this.getActor(req),
+    );
     const payload = intent.payload as any;
     if (payload?.serviceId !== id) throw new Error('Intent target mismatch');
-    const steps: ActionStep[] = [{ name: 'reset_ftp_password', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'reset_ftp_password', status: 'SUCCESS' },
+    ];
     try {
       await this.hosting.resetFtpPassword(id, payload.password);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result: { success: true } });
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result: { success: true },
+      });
     } catch (e) {
-      steps[0] = { name: 'reset_ftp_password', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'reset_ftp_password',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
-
 
   @Get(':id/dns')
   @HttpCode(HttpStatus.OK)
   async listDnsRecords(@Req() req: any, @Param('id') id: string) {
     const customer = await this.getCustomerForUser(req);
     const service = await this.hosting.get(id);
-    if (service.customerId !== customer.id) throw new UnauthorizedException('Access denied');
+    if (service.customerId !== customer.id)
+      throw new UnauthorizedException('Access denied');
     const records = await this.hosting.listDnsRecords(id);
     return { records };
   }

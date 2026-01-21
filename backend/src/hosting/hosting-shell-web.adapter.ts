@@ -14,7 +14,7 @@ import type {
   WebVhostSpec,
 } from './hosting-adapters';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
-import { execCommand, type ExecResult } from '../system/exec-command';
+import { execCommand } from '../system/exec-command';
 
 function safeDomainName(domain: string): string {
   const lowered = domain.toLowerCase();

@@ -1,4 +1,12 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class SourceConnectionDto {
   @IsString()
@@ -31,4 +39,3 @@ export class SourceConnectionDto {
   @IsString()
   cpanelHome?: string;
 }
-

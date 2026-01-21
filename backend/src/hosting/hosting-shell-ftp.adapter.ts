@@ -5,7 +5,7 @@ import type {
   FtpAccountSpec,
 } from './hosting-adapters';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
-import { execCommand, type ExecResult } from '../system/exec-command';
+import { execCommand } from '../system/exec-command';
 
 function getArgsFromEnv(baseEnvName: string, defaultArgs: string[]): string[] {
   const argsValue = process.env[`${baseEnvName}_ARGS`];
@@ -192,38 +192,33 @@ export class ShellFtpAdapter implements FtpAdapter {
     password: string,
   ): Promise<AdapterOperationResult> {
     if (!context.dryRun) {
-       const ftpBin = process.env.NPANEL_FTP_CMD;
-       if (!ftpBin) {
-         throw new Error('ftp_command_not_configured');
-       }
-       const command = await this.tools.resolve(ftpBin);
-       const args = getArgsFromEnv('NPANEL_FTP', []);
-       const cliArgs: string[] = [
-         ...args,
-         'password',
-         username,
-         password
-       ];
-       
-       const result = await execCommand(command, cliArgs);
-       if (result.code !== 0) {
-         await context.log({
-            adapter: 'ftp_shell',
-            operation: 'update',
-            targetKind: 'ftp_account',
-            targetKey: username,
-            success: false,
-            dryRun: false,
-            details: {
-                command,
-                args: cliArgs,
-                stdout: result.stdout,
-                stderr: result.stderr,
-            },
-            errorMessage: 'ftp_password_reset_failed',
-         });
-         throw new Error('ftp_password_reset_failed');
-       }
+      const ftpBin = process.env.NPANEL_FTP_CMD;
+      if (!ftpBin) {
+        throw new Error('ftp_command_not_configured');
+      }
+      const command = await this.tools.resolve(ftpBin);
+      const args = getArgsFromEnv('NPANEL_FTP', []);
+      const cliArgs: string[] = [...args, 'password', username, password];
+
+      const result = await execCommand(command, cliArgs);
+      if (result.code !== 0) {
+        await context.log({
+          adapter: 'ftp_shell',
+          operation: 'update',
+          targetKind: 'ftp_account',
+          targetKey: username,
+          success: false,
+          dryRun: false,
+          details: {
+            command,
+            args: cliArgs,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          },
+          errorMessage: 'ftp_password_reset_failed',
+        });
+        throw new Error('ftp_password_reset_failed');
+      }
     }
 
     await context.log({

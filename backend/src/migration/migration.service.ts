@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,7 +13,7 @@ import { MigrationLog } from './migration-log.entity';
 import { CreateMigrationJobDto } from './dto/create-migration-job.dto';
 import { AddMigrationAccountDto } from './dto/add-migration-account.dto';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile, rm, chmod } from 'node:fs/promises';
+import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ToolResolver, ToolNotFoundError } from '../system/tool-resolver';
@@ -22,6 +23,8 @@ import { encryptString, decryptString } from '../system/secretbox';
 
 @Injectable()
 export class MigrationService {
+  private readonly logger = new Logger(MigrationService.name);
+
   constructor(
     @InjectRepository(MigrationJob)
     private readonly jobs: Repository<MigrationJob>,
@@ -36,9 +39,12 @@ export class MigrationService {
   ) {}
 
   async sourcePreflight(sourceConfig: Record<string, unknown>) {
-    const host = typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
+    const host =
+      typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
     const sshUser =
-      typeof sourceConfig['sshUser'] === 'string' ? sourceConfig['sshUser'] : '';
+      typeof sourceConfig['sshUser'] === 'string'
+        ? sourceConfig['sshUser']
+        : '';
     const sshPortValue = sourceConfig['sshPort'];
     const sshPort =
       typeof sshPortValue === 'number' && Number.isInteger(sshPortValue)
@@ -63,7 +69,11 @@ export class MigrationService {
     const sshPath = await this.tools.resolve('ssh', {
       packageHint: 'openssh-client',
     });
-    checks.push({ name: 'ssh_client_present', status: 'PASS', details: { sshPath } });
+    checks.push({
+      name: 'ssh_client_present',
+      status: 'PASS',
+      details: { sshPath },
+    });
 
     const versionRes = await this.execTool(sshPath, ['-V']).catch((e) => ({
       code: 1,
@@ -83,7 +93,10 @@ export class MigrationService {
     );
     checks.push({
       name: 'ssh_connectivity',
-      status: pingRes.code === 0 && pingRes.stdout.includes('npanel_ok') ? 'PASS' : 'FAIL',
+      status:
+        pingRes.code === 0 && pingRes.stdout.includes('npanel_ok')
+          ? 'PASS'
+          : 'FAIL',
       details:
         pingRes.code === 0
           ? { stdout: pingRes.stdout.trim() }
@@ -103,7 +116,9 @@ export class MigrationService {
     checks.push({
       name: 'cpanel_detect',
       status:
-        cpanelVersion && cpanelVersion !== 'no_cpanel_version_file' ? 'PASS' : 'FAIL',
+        cpanelVersion && cpanelVersion !== 'no_cpanel_version_file'
+          ? 'PASS'
+          : 'FAIL',
       details:
         cpanelVersion && cpanelVersion !== 'no_cpanel_version_file'
           ? { version: cpanelVersion }
@@ -120,7 +135,10 @@ export class MigrationService {
         : { code: 1, stdout: '', stderr: 'ssh_unreachable' };
     checks.push({
       name: 'whmapi1_present',
-      status: whmapiRes.code === 0 && whmapiRes.stdout.includes('whmapi1_ok') ? 'PASS' : 'FAIL',
+      status:
+        whmapiRes.code === 0 && whmapiRes.stdout.includes('whmapi1_ok')
+          ? 'PASS'
+          : 'FAIL',
       details:
         whmapiRes.code === 0
           ? { stdout: whmapiRes.stdout.trim() }
@@ -138,16 +156,22 @@ export class MigrationService {
       },
       panel: {
         type: 'cpanel',
-        version: cpanelVersion && cpanelVersion !== 'no_cpanel_version_file' ? cpanelVersion : null,
+        version:
+          cpanelVersion && cpanelVersion !== 'no_cpanel_version_file'
+            ? cpanelVersion
+            : null,
       },
       checks,
     };
   }
 
   async discoverSourceAccounts(sourceConfig: Record<string, unknown>) {
-    const host = typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
+    const host =
+      typeof sourceConfig['host'] === 'string' ? sourceConfig['host'] : '';
     const sshUser =
-      typeof sourceConfig['sshUser'] === 'string' ? sourceConfig['sshUser'] : '';
+      typeof sourceConfig['sshUser'] === 'string'
+        ? sourceConfig['sshUser']
+        : '';
     const sshPortValue = sourceConfig['sshPort'];
     const sshPort =
       typeof sshPortValue === 'number' && Number.isInteger(sshPortValue)
@@ -169,23 +193,34 @@ export class MigrationService {
       { strictHostKey: false, connectTimeoutSeconds: 12 },
     );
     if (listRes.code !== 0) {
-      const err = new Error('source_account_discovery_failed') as Error & { details?: unknown };
-      err.details = { code: listRes.code, stderr: listRes.stderr, stdout: listRes.stdout };
+      const err = new Error('source_account_discovery_failed') as Error & {
+        details?: unknown;
+      };
+      err.details = {
+        code: listRes.code,
+        stderr: listRes.stderr,
+        stdout: listRes.stdout,
+      };
       throw err;
     }
     let parsed: any;
     try {
       parsed = JSON.parse(listRes.stdout);
     } catch {
-      const err = new Error('source_account_discovery_invalid_json') as Error & { details?: unknown };
+      const err = new Error(
+        'source_account_discovery_invalid_json',
+      ) as Error & { details?: unknown };
       err.details = { sample: listRes.stdout.slice(0, 500) };
       throw err;
     }
-    const acctList: any[] = Array.isArray(parsed?.data?.acct) ? parsed.data.acct : [];
+    const acctList: any[] = Array.isArray(parsed?.data?.acct)
+      ? parsed.data.acct
+      : [];
     const accounts = acctList
       .map((acct) => {
         const username = typeof acct?.user === 'string' ? acct.user : '';
-        const primaryDomain = typeof acct?.domain === 'string' ? acct.domain : '';
+        const primaryDomain =
+          typeof acct?.domain === 'string' ? acct.domain : '';
         const plan = typeof acct?.plan === 'string' ? acct.plan : null;
         const suspendedRaw = acct?.suspended;
         const suspended =
@@ -202,12 +237,13 @@ export class MigrationService {
           primaryDomain,
           plan,
           status: suspended ? 'suspended' : 'active',
-          diskUsageMb: Number.isFinite(diskUsageMb as any) ? (diskUsageMb as number) : null,
+          diskUsageMb: Number.isFinite(diskUsageMb as any)
+            ? (diskUsageMb as number)
+            : null,
         };
       })
       .filter((a) => a.username && a.primaryDomain);
 
-    const domains = accounts.map((a) => a.primaryDomain);
     const existing = await this.hosting.list();
     const existingDomains = new Set(existing.map((s) => s.primaryDomain));
     const enriched = accounts.map((a) => ({
@@ -225,7 +261,8 @@ export class MigrationService {
         selectedBytesEstimate: null,
       },
       conflictsSummary: {
-        domainConflicts: enriched.filter((a) => a.conflicts.domainExists).length,
+        domainConflicts: enriched.filter((a) => a.conflicts.domainExists)
+          .length,
       },
     };
   }
@@ -236,7 +273,9 @@ export class MigrationService {
       name: input.name,
       sourceType: input.sourceType,
       status: 'pending',
-      sourceConfig: input.sourceConfig ? encryptString(JSON.stringify(input.sourceConfig)) : null,
+      sourceConfig: input.sourceConfig
+        ? encryptString(JSON.stringify(input.sourceConfig))
+        : null,
       dryRun: input.dryRun ?? false,
     });
     const saved = await this.jobs.save(job);
@@ -247,7 +286,10 @@ export class MigrationService {
     return saved;
   }
 
-  async createJobWithAccounts(input: CreateMigrationJobDto, accounts: AddMigrationAccountDto[]) {
+  async createJobWithAccounts(
+    input: CreateMigrationJobDto,
+    accounts: AddMigrationAccountDto[],
+  ) {
     const job = await this.createJob(input);
     const created: MigrationAccount[] = [];
     for (const account of accounts) {
@@ -265,7 +307,9 @@ export class MigrationService {
       name: input.name,
       sourceType: input.sourceType,
       status: 'pending',
-      sourceConfig: input.sourceConfig ? encryptString(JSON.stringify(input.sourceConfig)) : null,
+      sourceConfig: input.sourceConfig
+        ? encryptString(JSON.stringify(input.sourceConfig))
+        : null,
       dryRun: input.dryRun ?? false,
     });
     const saved = await this.jobs.save(job);
@@ -411,49 +455,49 @@ export class MigrationService {
     if (!job) {
       throw new NotFoundException('Migration job not found');
     }
-    
+
     // If job is already running, do nothing (or maybe restart if stuck?)
     // For now, assume we just want to kick it off.
     if (job.status === 'running') {
-        return;
+      return;
     }
-    
+
     // Ensure steps are planned
     if (!job.steps || job.steps.length === 0) {
       await this.planJob(job.id);
     }
-    
+
     // Mark as running immediately
     job.status = 'running';
     await this.jobs.save(job);
-    
+
     // Start the processing loop in background (no await)
-    this.processJobLoop(job.id).catch(err => {
-        console.error(`Background migration failed for job ${jobId}`, err);
+    this.processJobLoop(job.id).catch((err) => {
+      this.logger.error(`Background migration failed for job ${jobId}: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 
   private async processJobLoop(jobId: string): Promise<void> {
-      // Loop until no more steps or failure
-      while (true) {
-          const result = await this.runNextStep(jobId);
-          if (
-              result.job.status === 'completed' || 
-              result.job.status === 'failed' || 
-              result.job.status === 'partial'
-          ) {
-              break;
-          }
-          // If step is null but status is running, it might mean waiting or inconsistency.
-          // refreshJobStatus inside runNextStep handles status updates.
-          if (!result.step && result.job.status === 'running') {
-              // No pending step found but job thinks it is running.
-              // Maybe we need to break to avoid infinite loop?
-              // runNextStep calls refreshJobStatus. If no pending steps, it sets to completed/failed.
-              // So we should be fine.
-              break;
-          }
+    // Loop until no more steps or failure
+    while (true) {
+      const result = await this.runNextStep(jobId);
+      if (
+        result.job.status === 'completed' ||
+        result.job.status === 'failed' ||
+        result.job.status === 'partial'
+      ) {
+        break;
       }
+      // If step is null but status is running, it might mean waiting or inconsistency.
+      // refreshJobStatus inside runNextStep handles status updates.
+      if (!result.step && result.job.status === 'running') {
+        // No pending step found but job thinks it is running.
+        // Maybe we need to break to avoid infinite loop?
+        // runNextStep calls refreshJobStatus. If no pending steps, it sets to completed/failed.
+        // So we should be fine.
+        break;
+      }
+    }
   }
 
   async runNextStep(jobId: string): Promise<{
@@ -729,9 +773,14 @@ export class MigrationService {
       throw new Error('Provision step requires an account');
     }
     const config = this.getDecryptedConfig(job);
-    const planLimits = config['planLimits'] as Record<string, unknown> | undefined;
+    const planLimits = config['planLimits'] as
+      | Record<string, unknown>
+      | undefined;
     const planNameValue = config['planName'] as string | undefined;
-    let planName = typeof planNameValue === 'string' && planNameValue.length > 0 ? planNameValue : 'basic';
+    let planName =
+      typeof planNameValue === 'string' && planNameValue.length > 0
+        ? planNameValue
+        : 'basic';
     if (!planNameValue && planLimits) {
       const stable = JSON.stringify({
         diskQuotaMb: planLimits['diskQuotaMb'],
@@ -766,13 +815,15 @@ export class MigrationService {
         primaryDomain: account.sourcePrimaryDomain,
         planName,
       } as any);
-      serviceId = (created as any).id ?? ((created as any).service?.id ?? null);
+      serviceId = (created as any).id ?? (created as any).service?.id ?? null;
       account.targetServiceId = serviceId;
       account.metadata = {
         ...(account.metadata ?? {}),
         sourceUsername: account.sourceUsername,
         sourcePackageName: planNameValue ?? null,
-        addonDomains: Array.isArray(config['addonDomains']) ? config['addonDomains'] : [],
+        addonDomains: Array.isArray(config['addonDomains'])
+          ? config['addonDomains']
+          : [],
         notes: ['Mailbox passwords reset during migration'],
       };
       await this.accounts.save(account);
@@ -796,39 +847,73 @@ export class MigrationService {
     const plan = plans.find((p) => p.name === (service.planName || 'basic'));
     const maxDbs = Number(plan?.maxDatabases ?? 0);
     const config = this.getDecryptedConfig(job);
-    const dumps = Array.isArray((config as any)['dbDumps']) ? ((config as any)['dbDumps'] as Array<{ name: string; path: string }>) : [];
+    const dumps = Array.isArray((config as any)['dbDumps'])
+      ? ((config as any)['dbDumps'] as Array<{ name: string; path: string }>)
+      : [];
     if (dumps.length === 0) {
       return;
     }
     if (maxDbs > 0 && dumps.length > maxDbs) {
-      const errorWithDetails = new Error('database_limit_exceeded') as Error & { details?: unknown };
+      const errorWithDetails = new Error('database_limit_exceeded') as Error & {
+        details?: unknown;
+      };
       errorWithDetails.details = { maxDbs, requested: dumps.length };
       throw errorWithDetails;
     }
-    const mysqlUsername = service.mysqlUsername || `${(service.systemUsername || 'u_site')}_db`;
+    const mysqlUsername =
+      service.mysqlUsername || `${service.systemUsername || 'u_site'}_db`;
     const mysqlPasswordEnc = (service as any).mysqlPasswordEnc as string | null;
-    const mysqlPassword = mysqlPasswordEnc ? decryptString(mysqlPasswordEnc) : '';
+    const mysqlPassword = mysqlPasswordEnc
+      ? decryptString(mysqlPasswordEnc)
+      : '';
     const mysqlBin = process.env.NPANEL_MYSQL_CMD || 'mysql';
-    const mysqlPath = await this.tools.resolve(mysqlBin, { packageHint: 'mysql client' });
+    const mysqlPath = await this.tools.resolve(mysqlBin, {
+      packageHint: 'mysql client',
+    });
     for (const dump of dumps) {
       const dbName = dump.name;
       const createSql = `CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`;
-      const createResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, '-e', createSql]);
+      const createResult = await this.execTool(mysqlPath, [
+        '-u',
+        mysqlUsername,
+        '-p' + mysqlPassword,
+        '-e',
+        createSql,
+      ]);
       if (createResult.code !== 0) {
-        const errorWithDetails = new Error('db_create_failed') as Error & { details?: unknown };
+        const errorWithDetails = new Error('db_create_failed') as Error & {
+          details?: unknown;
+        };
         errorWithDetails.details = createResult;
         throw errorWithDetails;
       }
-      const importResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, dbName, '-e', `source ${dump.path}`]);
+      const importResult = await this.execTool(mysqlPath, [
+        '-u',
+        mysqlUsername,
+        '-p' + mysqlPassword,
+        dbName,
+        '-e',
+        `source ${dump.path}`,
+      ]);
       if (importResult.code !== 0) {
-        const errorWithDetails = new Error('db_import_failed') as Error & { details?: unknown };
+        const errorWithDetails = new Error('db_import_failed') as Error & {
+          details?: unknown;
+        };
         errorWithDetails.details = importResult;
         throw errorWithDetails;
       }
       const grantSql = `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${mysqlUsername}'@'localhost'; FLUSH PRIVILEGES;`;
-      const grantResult = await this.execTool(mysqlPath, ['-u', mysqlUsername, '-p' + mysqlPassword, '-e', grantSql]);
+      const grantResult = await this.execTool(mysqlPath, [
+        '-u',
+        mysqlUsername,
+        '-p' + mysqlPassword,
+        '-e',
+        grantSql,
+      ]);
       if (grantResult.code !== 0) {
-        const errorWithDetails = new Error('db_grant_failed') as Error & { details?: unknown };
+        const errorWithDetails = new Error('db_grant_failed') as Error & {
+          details?: unknown;
+        };
         errorWithDetails.details = grantResult;
         throw errorWithDetails;
       }
@@ -863,11 +948,8 @@ export class MigrationService {
       sshPortValue > 0
     ) {
       sshPort = sshPortValue;
-    } else if (
-        typeof sshPortValue === 'string' &&
-        /^\d+$/.test(sshPortValue)
-    ) {
-        sshPort = parseInt(sshPortValue, 10);
+    } else if (typeof sshPortValue === 'string' && /^\d+$/.test(sshPortValue)) {
+      sshPort = parseInt(sshPortValue, 10);
     }
 
     // Auth Method Logic
@@ -881,132 +963,147 @@ export class MigrationService {
     let tempKeyPath: string | null = null;
 
     if (!sshKeyPath && sshKeyContent && sshKeyContent.trim().length > 0) {
-        // Create temp key file
-        const tmpDir = process.env.NPANEL_TEMP_DIR || '/tmp';
-        const rnd = randomBytes(16).toString('hex');
-        tempKeyPath = join(tmpDir, `mig_key_${rnd}`);
-        await writeFile(tempKeyPath, sshKeyContent, { mode: 0o600 });
-        sshKeyPath = tempKeyPath;
+      // Create temp key file
+      const tmpDir = process.env.NPANEL_TEMP_DIR || '/tmp';
+      const rnd = randomBytes(16).toString('hex');
+      tempKeyPath = join(tmpDir, `mig_key_${rnd}`);
+      await writeFile(tempKeyPath, sshKeyContent, { mode: 0o600 });
+      sshKeyPath = tempKeyPath;
     }
 
     try {
-        const payload: Record<string, unknown> = step.payload ?? {};
-        const sourcePathValue = payload['sourcePath'];
-        const sourcePath =
-          typeof sourcePathValue === 'string' && sourcePathValue.length > 0
-            ? sourcePathValue
-            : this.resolveSourceHomePath(job, account);
-        // restore into actual service home
-        let targetPath: string;
-        if (account.targetServiceId) {
-          const svc = await this.hosting.get(account.targetServiceId);
-          const username = svc.systemUsername || (svc as any).systemUsername || `u_${(svc.primaryDomain.toLowerCase().split('.')[0] || 'site').replace(/[^a-z0-9]/g, '').slice(0, 8)}`;
-          targetPath = `/home/${username}`;
-        } else {
-          const targetPathValue = payload['targetPath'];
-          targetPath =
-            typeof targetPathValue === 'string' && targetPathValue.length > 0
-              ? (targetPathValue as string)
-              : this.resolveTargetHomePath(job, account);
-        }
-        await mkdir(targetPath, { recursive: true });
-        const args: string[] = ['-az'];
-        if (job.dryRun) {
-          args.push('--dry-run');
-        }
-        const sshArgs: string[] = ['-o', 'StrictHostKeyChecking=yes'];
-        const knownHostsPathValue = config['knownHostsPath'];
-        const knownHostsPath =
-          typeof knownHostsPathValue === 'string' && knownHostsPathValue.length > 0
-            ? knownHostsPathValue
-            : null;
-        if (knownHostsPath) {
-          sshArgs.push('-o', `UserKnownHostsFile=${knownHostsPath}`);
-        }
-        
-        if (sshPort) {
-          sshArgs.push('-p', String(sshPort));
-        }
-        if (sshKeyPath) {
-          sshArgs.push('-i', sshKeyPath);
-        }
-        
-        let cmd = 'ssh';
-        if (sshPassword && !sshKeyPath) {
-             // Use sshpass
-             // We need to check if sshpass is available
-             // But we are constructing the RSYNC command's -e argument.
-             // rsync -e 'sshpass -p pass ssh ...'
-             // Note: sshpass needs to run rsync, or rsync needs to run sshpass?
-             // rsync -e 'ssh ...'
-             // If we use sshpass, we wrap rsync?
-             // sshpass -p pass rsync ... -e 'ssh ...'
-             // Wait, sshpass passes the password to the command it runs.
-             // If rsync runs ssh, ssh prompts for password.
-             // sshpass -p pass rsync ... works if rsync runs ssh and ssh reads from tty?
-             // sshpass sets up a PTY.
-             // It's cleaner to wrap the whole rsync command with sshpass.
-             // But we need to know if we are using it.
-        }
+      const payload: Record<string, unknown> = step.payload ?? {};
+      const sourcePathValue = payload['sourcePath'];
+      const sourcePath =
+        typeof sourcePathValue === 'string' && sourcePathValue.length > 0
+          ? sourcePathValue
+          : this.resolveSourceHomePath(job, account);
+      // restore into actual service home
+      let targetPath: string;
+      if (account.targetServiceId) {
+        const svc = await this.hosting.get(account.targetServiceId);
+        const username =
+          svc.systemUsername ||
+          (svc as any).systemUsername ||
+          `u_${(svc.primaryDomain.toLowerCase().split('.')[0] || 'site').replace(/[^a-z0-9]/g, '').slice(0, 8)}`;
+        targetPath = `/home/${username}`;
+      } else {
+        const targetPathValue = payload['targetPath'];
+        targetPath =
+          typeof targetPathValue === 'string' && targetPathValue.length > 0
+            ? targetPathValue
+            : this.resolveTargetHomePath(job, account);
+      }
+      await mkdir(targetPath, { recursive: true });
+      const args: string[] = ['-az'];
+      if (job.dryRun) {
+        args.push('--dry-run');
+      }
+      const sshArgs: string[] = ['-o', 'StrictHostKeyChecking=yes'];
+      const knownHostsPathValue = config['knownHostsPath'];
+      const knownHostsPath =
+        typeof knownHostsPathValue === 'string' &&
+        knownHostsPathValue.length > 0
+          ? knownHostsPathValue
+          : null;
+      if (knownHostsPath) {
+        sshArgs.push('-o', `UserKnownHostsFile=${knownHostsPath}`);
+      }
 
-        const rsyncBin = process.env.NPANEL_RSYNC_CMD || 'rsync';
-        let rsyncPath: string;
-        try {
-          rsyncPath = await this.tools.resolve(rsyncBin, {
-            packageHint: 'rsync package',
+      if (sshPort) {
+        sshArgs.push('-p', String(sshPort));
+      }
+      if (sshKeyPath) {
+        sshArgs.push('-i', sshKeyPath);
+      }
+
+      if (sshPassword && !sshKeyPath) {
+        // Use sshpass
+        // We need to check if sshpass is available
+        // But we are constructing the RSYNC command's -e argument.
+        // rsync -e 'sshpass -p pass ssh ...'
+        // Note: sshpass needs to run rsync, or rsync needs to run sshpass?
+        // rsync -e 'ssh ...'
+        // If we use sshpass, we wrap rsync?
+        // sshpass -p pass rsync ... -e 'ssh ...'
+        // Wait, sshpass passes the password to the command it runs.
+        // If rsync runs ssh, ssh prompts for password.
+        // sshpass -p pass rsync ... works if rsync runs ssh and ssh reads from tty?
+        // sshpass sets up a PTY.
+        // It's cleaner to wrap the whole rsync command with sshpass.
+        // But we need to know if we are using it.
+      }
+
+      const rsyncBin = process.env.NPANEL_RSYNC_CMD || 'rsync';
+      let rsyncPath: string;
+      try {
+        rsyncPath = await this.tools.resolve(rsyncBin, {
+          packageHint: 'rsync package',
+        });
+      } catch (err) {
+        if (err instanceof ToolNotFoundError) {
+          await this.appendLog(job, account, 'error', 'tool_not_found', {
+            tool: err.toolName,
+            feature: 'migration_rsync_home',
+            packageHint: err.packageHint ?? 'rsync package',
+            methodsTried: err.methods,
           });
-        } catch (err) {
-          if (err instanceof ToolNotFoundError) {
-            await this.appendLog(job, account, 'error', 'tool_not_found', {
-              tool: err.toolName,
-              feature: 'migration_rsync_home',
-              packageHint: err.packageHint ?? 'rsync package',
-              methodsTried: err.methods,
-            });
-          }
-          throw err;
         }
+        throw err;
+      }
 
-        let execCommand = rsyncPath;
-        let execArgs = args;
-        
-        // Finalize -e argument
-        execArgs.push('-e', `ssh ${sshArgs.join(' ')}`);
-        execArgs.push(`${sshUser}@${host}:${sourcePath}/`, `${targetPath}/`);
+      let execCommand = rsyncPath;
+      let execArgs = args;
 
-        if (sshPassword && !sshKeyPath) {
-             const sshpassBin = await this.tools.resolve('sshpass', { packageHint: 'sshpass' }).catch(() => null);
-             if (!sshpassBin) {
-                 throw new Error('sshpass not found. Please install sshpass or use SSH Key.');
-             }
-             execCommand = sshpassBin;
-             execArgs = ['-p', sshPassword, rsyncPath, ...args]; // Re-construct args for sshpass wrapping
-             // Wait, if we wrap, args are: sshpass -p PASS rsync -az ... -e 'ssh ...' src dest
-             // Yes.
+      // Finalize -e argument
+      execArgs.push('-e', `ssh ${sshArgs.join(' ')}`);
+      execArgs.push(`${sshUser}@${host}:${sourcePath}/`, `${targetPath}/`);
+
+      if (sshPassword && !sshKeyPath) {
+        const sshpassBin = await this.tools
+          .resolve('sshpass', { packageHint: 'sshpass' })
+          .catch(() => null);
+        if (!sshpassBin) {
+          throw new Error(
+            'sshpass not found. Please install sshpass or use SSH Key.',
+          );
         }
+        execCommand = sshpassBin;
+        execArgs = ['-p', sshPassword, rsyncPath, ...args]; // Re-construct args for sshpass wrapping
+        // Wait, if we wrap, args are: sshpass -p PASS rsync -az ... -e 'ssh ...' src dest
+        // Yes.
+      }
 
-        const result = await this.execRsync(execCommand, execArgs);
-        if (result.code !== 0) {
-          const errorWithDetails = new Error('rsync_failed') as Error & {
-            details?: {
-              code: number;
-              stdout: string;
-              stderr: string;
-            };
+      const result = await this.execRsync(execCommand, execArgs);
+      if (result.code !== 0) {
+        const errorWithDetails = new Error('rsync_failed') as Error & {
+          details?: {
+            code: number;
+            stdout: string;
+            stderr: string;
           };
-          errorWithDetails.details = result;
-          if (result.stderr.includes('Host key verification failed')) {
-            await this.appendLog(job, account, 'error', 'host_key_verification_failed', {
-              hint: knownHostsPath ? 'Verify known_hosts file contains correct host key' : 'Add source host key to known_hosts or provide knownHostsPath',
+        };
+        errorWithDetails.details = result;
+        if (result.stderr.includes('Host key verification failed')) {
+          await this.appendLog(
+            job,
+            account,
+            'error',
+            'host_key_verification_failed',
+            {
+              hint: knownHostsPath
+                ? 'Verify known_hosts file contains correct host key'
+                : 'Add source host key to known_hosts or provide knownHostsPath',
               host: host,
-            });
-          }
-          throw errorWithDetails;
+            },
+          );
         }
+        throw errorWithDetails;
+      }
     } finally {
-        if (tempKeyPath) {
-            await rm(tempKeyPath, { force: true }).catch(() => {});
-        }
+      if (tempKeyPath) {
+        await rm(tempKeyPath, { force: true }).catch(() => {});
+      }
     }
   }
 
@@ -1089,8 +1186,8 @@ export class MigrationService {
 
     let sshKeyPath =
       typeof sourceConfig['sshKeyPath'] === 'string' &&
-      (sourceConfig['sshKeyPath'] as string).length > 0
-        ? (sourceConfig['sshKeyPath'] as string)
+      sourceConfig['sshKeyPath'].length > 0
+        ? sourceConfig['sshKeyPath']
         : null;
     const sshKeyContent = sourceConfig['sshKey'] as string | undefined;
     const sshPassword = sourceConfig['sshPassword'] as string | undefined;
@@ -1129,7 +1226,12 @@ export class MigrationService {
         const sshpassBin = await this.tools.resolve('sshpass', {
           packageHint: 'sshpass',
         });
-        return this.execTool(sshpassBin, ['-p', sshPassword, sshPath, ...sshArgs]);
+        return this.execTool(sshpassBin, [
+          '-p',
+          sshPassword,
+          sshPath,
+          ...sshArgs,
+        ]);
       }
       return this.execTool(sshPath, sshArgs);
     } finally {
@@ -1183,10 +1285,18 @@ export class MigrationService {
     return this.logs.save(log);
   }
 
-  private sanitizeLogContext(context: Record<string, any> | null): Record<string, any> | null {
+  private sanitizeLogContext(
+    context: Record<string, any> | null,
+  ): Record<string, any> | null {
     if (!context) return null;
     const cloned: Record<string, any> = { ...context };
-    const redactKeys = ['password', 'sshPassword', 'sshKey', 'privateKey', 'secret'];
+    const redactKeys = [
+      'password',
+      'sshPassword',
+      'sshKey',
+      'privateKey',
+      'secret',
+    ];
     for (const k of Object.keys(cloned)) {
       if (redactKeys.includes(k)) {
         cloned[k] = '[REDACTED]';

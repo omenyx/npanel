@@ -50,4 +50,3 @@ export class CreateMigrationFromSourceDto {
   @Type(() => MigrationSourceAccountDto)
   accounts!: MigrationSourceAccountDto[];
 }
-

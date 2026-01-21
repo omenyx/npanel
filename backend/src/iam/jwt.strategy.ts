@@ -28,7 +28,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       if (typeof cookieToken === 'string' && cookieToken.length > 0) {
         return cookieToken;
       }
-      const header = request.get('authorization') ?? request.headers.authorization ?? null;
+      const header =
+        request.get('authorization') ?? request.headers.authorization ?? null;
       if (!header) return null;
       const [scheme, token] = header.split(' ');
       if (!scheme || scheme.toLowerCase() !== 'bearer' || !token) return null;

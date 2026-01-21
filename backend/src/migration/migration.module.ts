@@ -24,7 +24,11 @@ import { AccountsModule } from '../accounts/accounts.module';
     HostingModule,
     AccountsModule,
   ],
-  controllers: [MigrationController, CustomerMigrationController, MigrationSourceController],
+  controllers: [
+    MigrationController,
+    CustomerMigrationController,
+    MigrationSourceController,
+  ],
   providers: [MigrationService],
 })
 export class MigrationModule {}

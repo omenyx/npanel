@@ -1,7 +1,13 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from 'node:crypto';
 
 function getSecret(): string {
-  const secret = process.env.NPANEL_CREDENTIALS_SECRET || process.env.JWT_SECRET;
+  const secret =
+    process.env.NPANEL_CREDENTIALS_SECRET || process.env.JWT_SECRET;
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('missing_secret');
@@ -42,6 +48,9 @@ export function decryptString(value: string): string {
   const ciphertext = Buffer.from(parts[3] ?? '', 'base64');
   const decipher = createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  const decrypted = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]);
   return decrypted.toString('utf8');
 }

@@ -9,8 +9,12 @@ import { MigrationLog } from './migration-log.entity';
 function repo<T extends object>() {
   const items: T[] = [] as T[];
   const r = {
-    findOne: async (opts: any) => items.find((i: any) => i.id === opts.where.id) || null,
-    save: async (e: any) => { items.push(e); return e; },
+    findOne: async (opts: any) =>
+      items.find((i: any) => i.id === opts.where.id) || null,
+    save: async (e: any) => {
+      items.push(e);
+      return e;
+    },
     create: (e: any) => e,
     find: async () => items,
   } as unknown as Repository<T>;
@@ -29,7 +33,10 @@ describe('MigrationService SSH host key verification', () => {
     const a = repo<MigrationAccount>();
     const s = repo<MigrationStep>();
     const l = repo<MigrationLog>();
-    jobsRepo = j; accountsRepo = a; stepsRepo = s; logsRepo = l;
+    jobsRepo = j;
+    accountsRepo = a;
+    stepsRepo = s;
+    logsRepo = l;
     service = new MigrationService(
       j.r as any,
       a.r as any,
@@ -41,10 +48,31 @@ describe('MigrationService SSH host key verification', () => {
   });
 
   it('builds SSH args with StrictHostKeyChecking=yes', async () => {
-    const job = await jobsRepo.r.save({ id: 'j1', name: 'job', sourceType: 'cpanel_live_ssh', status: 'pending', sourceConfig: { host: 'h', sshUser: 'u' }, dryRun: false });
-    const acct = await accountsRepo.r.save({ id: 'a1', job, sourceUsername: 'user', sourcePrimaryDomain: 'd' });
-    const step = await stepsRepo.r.save({ id: 's1', job, account: acct, name: 'rsync_home_directory', status: 'pending', payload: { sourcePath: '/home/user', targetPath: '/tmp/user' } });
-    const spy = jest.spyOn(service as any, 'execRsync').mockResolvedValue({ code: 0, stdout: '', stderr: '' });
+    const job = await jobsRepo.r.save({
+      id: 'j1',
+      name: 'job',
+      sourceType: 'cpanel_live_ssh',
+      status: 'pending',
+      sourceConfig: { host: 'h', sshUser: 'u' },
+      dryRun: false,
+    });
+    const acct = await accountsRepo.r.save({
+      id: 'a1',
+      job,
+      sourceUsername: 'user',
+      sourcePrimaryDomain: 'd',
+    });
+    const step = await stepsRepo.r.save({
+      id: 's1',
+      job,
+      account: acct,
+      name: 'rsync_home_directory',
+      status: 'pending',
+      payload: { sourcePath: '/home/user', targetPath: '/tmp/user' },
+    });
+    const spy = jest
+      .spyOn(service as any, 'execRsync')
+      .mockResolvedValue({ code: 0, stdout: '', stderr: '' });
     await (service as any).handleRsyncHome(step, job);
     const args = spy.mock.calls[0][1] as string[];
     const eIdx = args.indexOf('-e');
@@ -52,4 +80,3 @@ describe('MigrationService SSH host key verification', () => {
     expect(sshCfg).toContain('StrictHostKeyChecking=yes');
   });
 });
-

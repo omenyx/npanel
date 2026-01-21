@@ -51,4 +51,3 @@ export class AuthLoginEvent {
   @Column({ type: 'datetime', nullable: true })
   expiresAt: Date | null;
 }
-

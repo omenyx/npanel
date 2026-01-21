@@ -21,7 +21,8 @@ function repo<T extends object>() {
       return e;
     },
     create: (e: any) => e,
-    count: async (opts: any) => items.filter((i: any) => i['planName'] === opts.where.planName).length,
+    count: async (opts: any) =>
+      items.filter((i: any) => i['planName'] === opts.where.planName).length,
     delete: async (opts: any) => {
       for (let idx = items.length - 1; idx >= 0; idx -= 1) {
         if (matches(items[idx] as any, opts)) {
@@ -94,7 +95,11 @@ describe('HostingService termination two-phase', () => {
       adapter() as any,
       adapter() as any,
       l.r as any,
-      { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
+      {
+        generateDatabasePassword: () => 'a',
+        generateMailboxPassword: () => 'b',
+        generateFtpPassword: () => 'c',
+      } as any,
       {} as any,
       tools() as any,
     );
@@ -132,7 +137,10 @@ describe('HostingService termination two-phase', () => {
   it('confirm purge removes service record', async () => {
     const web = adapter();
     const php = adapter();
-    const mysql = { ...adapter(), listDatabases: async () => ['u_example_db_app'] };
+    const mysql = {
+      ...adapter(),
+      listDatabases: async () => ['u_example_db_app'],
+    };
     const dns = adapter();
     const mail = {
       ...adapter(),
@@ -142,8 +150,8 @@ describe('HostingService termination two-phase', () => {
     const ftp = adapter();
     const user = adapter();
     service = new HostingService(
-      servicesRepo.r as any,
-      plansRepo.r as any,
+      servicesRepo.r,
+      plansRepo.r,
       user as any,
       web as any,
       php as any,
@@ -151,13 +159,19 @@ describe('HostingService termination two-phase', () => {
       dns as any,
       mail as any,
       ftp as any,
-      logsRepo.r as any,
-      { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
+      logsRepo.r,
+      {
+        generateDatabasePassword: () => 'a',
+        generateMailboxPassword: () => 'b',
+        generateFtpPassword: () => 'c',
+      } as any,
       {} as any,
       tools() as any,
     );
     const prepared = await service.terminatePrepare('svc1');
-    const confirmed = await service.terminateConfirm('svc1', prepared.token, { purge: true });
+    const confirmed = await service.terminateConfirm('svc1', prepared.token, {
+      purge: true,
+    });
     expect(confirmed.status).toBe('terminated');
     expect((servicesRepo.items as any[]).length).toBe(0);
   });
@@ -198,7 +212,11 @@ describe('HostingService provisioning', () => {
       adapter() as any,
       adapter() as any,
       l.r as any,
-      { generateDatabasePassword: () => 'mysqlPass', generateMailboxPassword: () => 'mailPass', generateFtpPassword: () => 'ftpPass' } as any,
+      {
+        generateDatabasePassword: () => 'mysqlPass',
+        generateMailboxPassword: () => 'mailPass',
+        generateFtpPassword: () => 'ftpPass',
+      } as any,
       {} as any,
       tools() as any,
     );
@@ -233,8 +251,8 @@ describe('HostingService provisioning', () => {
       },
     };
     service = new HostingService(
-      servicesRepo.r as any,
-      plansRepo.r as any,
+      servicesRepo.r,
+      plansRepo.r,
       adapter() as any,
       web as any,
       adapter() as any,
@@ -242,13 +260,19 @@ describe('HostingService provisioning', () => {
       adapter() as any,
       adapter() as any,
       adapter() as any,
-      logsRepo.r as any,
-      { generateDatabasePassword: () => 'mysqlPass', generateMailboxPassword: () => 'mailPass', generateFtpPassword: () => 'ftpPass' } as any,
+      logsRepo.r,
+      {
+        generateDatabasePassword: () => 'mysqlPass',
+        generateMailboxPassword: () => 'mailPass',
+        generateFtpPassword: () => 'ftpPass',
+      } as any,
       {} as any,
       tools() as any,
     );
 
-    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow('vhost_failed');
+    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow(
+      'vhost_failed',
+    );
     const failed = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
     expect(failed.status).toBe('error');
     expect(failed.provisioningFailedPhase).toBe('web_vhost');
@@ -284,8 +308,8 @@ describe('HostingService provisioning', () => {
       },
     };
     service = new HostingService(
-      servicesRepo.r as any,
-      plansRepo.r as any,
+      servicesRepo.r,
+      plansRepo.r,
       adapter() as any,
       web as any,
       adapter() as any,
@@ -293,13 +317,15 @@ describe('HostingService provisioning', () => {
       adapter() as any,
       adapter() as any,
       adapter() as any,
-      logsRepo.r as any,
+      logsRepo.r,
       creds as any,
       {} as any,
       tools() as any,
     );
 
-    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow('vhost_failed');
+    await expect(service.provisionWithCredentials('svc1')).rejects.toThrow(
+      'vhost_failed',
+    );
     const failed = (servicesRepo.items as any[]).find((x) => x.id === 'svc1');
     const encBefore = failed.mysqlPasswordEnc;
 
@@ -344,7 +370,11 @@ describe('HostingService create', () => {
       adapter() as any,
       adapter() as any,
       l.r as any,
-      { generateDatabasePassword: () => 'a', generateMailboxPassword: () => 'b', generateFtpPassword: () => 'c' } as any,
+      {
+        generateDatabasePassword: () => 'a',
+        generateMailboxPassword: () => 'b',
+        generateFtpPassword: () => 'c',
+      } as any,
       {} as any,
       tools() as any,
     );
@@ -371,4 +401,3 @@ describe('HostingService create', () => {
     expect((servicesRepo.items as any[])[0].id).not.toBe('old');
   });
 });
-

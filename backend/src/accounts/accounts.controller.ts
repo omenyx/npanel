@@ -38,10 +38,7 @@ export class AccountsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(
-    @Req() req: Request & { user?: { id?: string } },
-    @Body() body: CreateCustomerDto,
-  ) {
+  create() {
     throw new Error('Create customer requires prepare and confirm');
   }
 
@@ -54,7 +51,7 @@ export class AccountsController {
 
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
-  async update(@Param('id') id: string, @Body() body: UpdateCustomerDto) {
+  update() {
     throw new Error('Update customer requires prepare and confirm');
   }
 
@@ -64,7 +61,12 @@ export class AccountsController {
     @Req() req: Request & { user?: { id?: string } },
     @Body() body: CreateCustomerDto & { reason?: string },
   ) {
-    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = {
+      actorId: req.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     return this.governance.prepare({
       module: 'accounts',
       action: 'create_customer',
@@ -84,16 +86,43 @@ export class AccountsController {
     @Req() req: Request & { user?: { id?: string } },
     @Body() body: { intentId: string; token: string },
   ) {
-    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
+    const actor = {
+      actorId: req.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      actor,
+    );
     const ownerUserId = req.user?.id ?? '';
-    const steps: ActionStep[] = [{ name: 'create_customer', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'create_customer', status: 'SUCCESS' },
+    ];
     try {
-      const result = await this.accounts.create(ownerUserId, intent.payload as any);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      const result = await this.accounts.create(
+        ownerUserId,
+        intent.payload as any,
+      );
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'create_customer', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'create_customer',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 
@@ -104,7 +133,12 @@ export class AccountsController {
     @Param('id') id: string,
     @Body() body: UpdateCustomerDto & { reason?: string },
   ) {
-    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin', reason: typeof body?.reason === 'string' ? body.reason : undefined };
+    const actor = {
+      actorId: req.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+      reason: typeof body?.reason === 'string' ? body.reason : undefined,
+    };
     await this.accounts.get(id);
     return this.governance.prepare({
       module: 'accounts',
@@ -126,17 +160,41 @@ export class AccountsController {
     @Param('id') id: string,
     @Body() body: { intentId: string; token: string },
   ) {
-    const actor = { actorId: req.user?.id, actorRole: 'ADMIN', actorType: 'admin' };
-    const intent = await this.governance.verifyWithActor(body.intentId, body.token, actor);
+    const actor = {
+      actorId: req.user?.id,
+      actorRole: 'ADMIN',
+      actorType: 'admin',
+    };
+    const intent = await this.governance.verifyWithActor(
+      body.intentId,
+      body.token,
+      actor,
+    );
     const payload = intent.payload as any;
     if (payload?.id !== id) throw new Error('Intent target mismatch');
-    const steps: ActionStep[] = [{ name: 'update_customer', status: 'SUCCESS' }];
+    const steps: ActionStep[] = [
+      { name: 'update_customer', status: 'SUCCESS' },
+    ];
     try {
-      const result = await this.accounts.update(id, payload as any);
-      return this.governance.recordResult({ intent, status: 'SUCCESS', steps, result });
+      const result = await this.accounts.update(id, payload);
+      return this.governance.recordResult({
+        intent,
+        status: 'SUCCESS',
+        steps,
+        result,
+      });
     } catch (e) {
-      steps[0] = { name: 'update_customer', status: 'FAILED', errorMessage: e instanceof Error ? e.message : 'unknown_error' };
-      return this.governance.recordResult({ intent, status: 'FAILED', steps, errorMessage: steps[0].errorMessage ?? null });
+      steps[0] = {
+        name: 'update_customer',
+        status: 'FAILED',
+        errorMessage: e instanceof Error ? e.message : 'unknown_error',
+      };
+      return this.governance.recordResult({
+        intent,
+        status: 'FAILED',
+        steps,
+        errorMessage: steps[0].errorMessage ?? null,
+      });
     }
   }
 }

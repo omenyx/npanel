@@ -388,10 +388,14 @@ setup_mysql() {
   ensure_services_start
 
   mysql_exec "CREATE DATABASE IF NOT EXISTS npanel;"
-  mysql_exec "CREATE USER IF NOT EXISTS 'npanel'@'localhost' IDENTIFIED BY 'npanel_dev_password';"
+  
+  # Generate secure random password for npanel user (32 hex chars = 16 bytes)
+  local NPANEL_DB_PASS; NPANEL_DB_PASS="$(openssl rand -hex 16)"
+  mysql_exec "CREATE USER IF NOT EXISTS 'npanel'@'localhost' IDENTIFIED BY '$NPANEL_DB_PASS';"
   mysql_exec "GRANT ALL PRIVILEGES ON npanel.* TO 'npanel'@'localhost'; FLUSH PRIVILEGES;"
 
-  local DB_ROOT_PASS="npanel_dev_password"
+  # Generate secure random password for root and pdns users (32 hex chars = 16 bytes)
+  local DB_ROOT_PASS; DB_ROOT_PASS="$(openssl rand -hex 16)"
   if [[ -f "/root/.my.cnf" ]]; then
     log "MySQL root credentials already configured."
   else
@@ -405,9 +409,11 @@ EOF
   fi
 
   mysql -e "CREATE DATABASE IF NOT EXISTS pdns;" || true
-  mysql -e "CREATE USER IF NOT EXISTS 'pdns'@'localhost' IDENTIFIED BY '$DB_ROOT_PASS';" || true
+  # Use separately generated password for pdns user
+  local PDNS_DB_PASS; PDNS_DB_PASS="$(openssl rand -hex 16)"
+  mysql -e "CREATE USER IF NOT EXISTS 'pdns'@'localhost' IDENTIFIED BY '$PDNS_DB_PASS';" || true
   mysql -e "GRANT ALL PRIVILEGES ON pdns.* TO 'pdns'@'localhost'; FLUSH PRIVILEGES;" || true
-  configure_powerdns "$DB_ROOT_PASS"
+  configure_powerdns "$PDNS_DB_PASS"
 }
 
 configure_powerdns() {
@@ -609,10 +615,15 @@ write_env() {
   fi
   resolve_tool_cmds
   local jwt; jwt="$(generate_jwt_secret)"
+  local root_pass; root_pass="$(openssl rand -hex 16)" # 32-char random hex string
+  
+  log "Generated secure root password for this installation"
+  
   cat > "$dest" <<EOF
 NODE_ENV=production
 PORT=3000
 JWT_SECRET=$jwt
+NPANEL_ROOT_PASSWORD=$root_pass
 NPANEL_HOSTING_DRY_RUN=0
 NPANEL_FIXED_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 NPANEL_ALLOWED_RESTART_SERVICES=
@@ -635,11 +646,22 @@ ensure_env_defaults() {
   if [[ ! -f "$dest" ]]; then
     return
   fi
+  
+  # Ensure NPANEL_ROOT_PASSWORD is set
+  if ! grep -qE '^NPANEL_ROOT_PASSWORD=' "$dest"; then
+    local root_pass; root_pass="$(openssl rand -hex 16)"
+    echo "NPANEL_ROOT_PASSWORD=$root_pass" >> "$dest"
+    log "Added NPANEL_ROOT_PASSWORD to .env"
+  fi
+  
+  # Ensure FTP command is set
   if ! grep -qE '^NPANEL_FTP_CMD=' "$dest"; then
     echo "NPANEL_FTP_CMD=/usr/local/bin/npanel-ftp" >> "$dest"
   else
     sed -i 's|^NPANEL_FTP_CMD=$|NPANEL_FTP_CMD=/usr/local/bin/npanel-ftp|' "$dest" || true
   fi
+  
+  # Ensure MAIL command is set
   if ! grep -qE '^NPANEL_MAIL_CMD=' "$dest"; then
     echo "NPANEL_MAIL_CMD=/usr/local/bin/npanel-mail" >> "$dest"
   else
