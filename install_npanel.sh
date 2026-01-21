@@ -452,6 +452,7 @@ verify_all_services() {
     log "✓ Nginx listening on port 8080"
   else
     err "✗ Nginx NOT listening on port 8080"
+    diagnose_nginx
     services_ok=0
   fi
   
@@ -503,6 +504,173 @@ verify_all_services() {
   fi
   
   log "✓ All critical services verified and running!"
+  return 0
+}
+
+diagnose_nginx() {
+  log ""
+  log "=== NGINX DIAGNOSTIC REPORT ==="
+  
+  # Check if nginx is installed
+  if ! check_cmd nginx; then
+    err "✗ Nginx is NOT installed!"
+    return 1
+  fi
+  log "✓ Nginx is installed"
+  
+  # Check nginx config syntax
+  log ""
+  log "Checking nginx config syntax..."
+  if nginx -t 2>&1 | grep -q "successful"; then
+    log "✓ Nginx config is valid"
+  else
+    err "✗ Nginx config has errors:"
+    nginx -t 2>&1 || true
+    return 1
+  fi
+  
+  # Check if nginx process is running
+  log ""
+  log "Checking nginx process..."
+  if systemctl is-active --quiet nginx 2>/dev/null; then
+    log "✓ Nginx service is running (systemd)"
+  elif pgrep -x nginx >/dev/null 2>&1; then
+    log "✓ Nginx process is running (pgrep)"
+  else
+    err "✗ Nginx process is NOT running"
+    return 1
+  fi
+  
+  # Check port 8080
+  log ""
+  log "Checking port 8080..."
+  if port_listening 8080; then
+    log "✓ Port 8080 is listening"
+  else
+    err "✗ Port 8080 is NOT listening"
+    
+    # Check if port is in use by something else
+    if check_cmd netstat; then
+      local port_info
+      port_info="$(netstat -tln 2>/dev/null | grep ':8080 ' || true)"
+      if [[ -n "$port_info" ]]; then
+        log "Port 8080 info: $port_info"
+      fi
+    fi
+    if check_cmd lsof; then
+      local lsof_info
+      lsof_info="$(lsof -i :8080 2>/dev/null || true)"
+      if [[ -n "$lsof_info" ]]; then
+        log "Processes using port 8080: $lsof_info"
+      fi
+    fi
+  fi
+  
+  # Check SELinux status
+  log ""
+  log "Checking SELinux status..."
+  if check_cmd getenforce; then
+    local selinux_status
+    selinux_status="$(getenforce 2>/dev/null || echo 'unknown')"
+    log "SELinux status: $selinux_status"
+    
+    if [[ "$selinux_status" == "Enforcing" ]]; then
+      err "⚠ SELinux is ENFORCING - may be blocking nginx"
+      log ""
+      log "To check SELinux denials for nginx:"
+      log "  sudo grep nginx /var/log/audit/audit.log | tail -20"
+      log ""
+      log "To allow nginx to bind to port 8080:"
+      log "  sudo semanage port -a -t http_port_t -p tcp 8080"
+      log ""
+      log "To temporarily disable SELinux:"
+      log "  sudo setenforce 0"
+      log ""
+    else
+      log "✓ SELinux is not enforcing (or not present)"
+    fi
+  else
+    log "✓ SELinux not installed"
+  fi
+  
+  # Check AppArmor (Debian/Ubuntu)
+  log ""
+  log "Checking AppArmor status..."
+  if check_cmd aa-status; then
+    if aa-status 2>/dev/null | grep -q nginx; then
+      log "⚠ AppArmor is loaded with nginx profile"
+      log ""
+      log "To check AppArmor denials for nginx:"
+      log "  sudo grep nginx /var/log/syslog | grep DENIED | tail -20"
+      log ""
+    else
+      log "✓ AppArmor not restricting nginx"
+    fi
+  else
+    log "✓ AppArmor not installed"
+  fi
+  
+  # Check nginx error logs
+  log ""
+  log "Recent nginx errors:"
+  if [[ -f /var/log/nginx/error.log ]]; then
+    tail -n 10 /var/log/nginx/error.log || true
+  else
+    log "Nginx error log not found at /var/log/nginx/error.log"
+  fi
+  
+  # Check if nginx config exists
+  log ""
+  log "Checking nginx config file..."
+  if [[ -f /etc/nginx/conf.d/npanel.conf ]]; then
+    log "✓ Found /etc/nginx/conf.d/npanel.conf"
+    log ""
+    log "Config content:"
+    head -n 20 /etc/nginx/conf.d/npanel.conf || true
+  elif [[ -f /etc/nginx/sites-enabled/npanel.conf ]]; then
+    log "✓ Found /etc/nginx/sites-enabled/npanel.conf"
+    log ""
+    log "Config content:"
+    head -n 20 /etc/nginx/sites-enabled/npanel.conf || true
+  else
+    err "✗ No npanel nginx config found!"
+    return 1
+  fi
+  
+  # Check firewall
+  log ""
+  log "Checking firewall (UFW/firewalld)..."
+  if check_cmd ufw; then
+    if ufw status | grep -q "Status: active"; then
+      log "⚠ UFW firewall is active"
+      log ""
+      log "Firewall rules:"
+      ufw status || true
+      log ""
+      log "To allow port 8080 through UFW:"
+      log "  sudo ufw allow 8080/tcp"
+      log ""
+    else
+      log "✓ UFW is not active"
+    fi
+  fi
+  
+  if check_cmd firewall-cmd; then
+    if firewall-cmd --state 2>/dev/null | grep -q "running"; then
+      log "⚠ Firewalld is active"
+      log ""
+      log "To check firewalld rules:"
+      log "  sudo firewall-cmd --list-all"
+      log ""
+      log "To allow port 8080 through firewalld:"
+      log "  sudo firewall-cmd --permanent --add-port=8080/tcp"
+      log "  sudo firewall-cmd --reload"
+      log ""
+    fi
+  fi
+  
+  log "=== END NGINX DIAGNOSTIC REPORT ==="
+  log ""
   return 0
 }
 
