@@ -39,9 +39,10 @@ After installation and first login, Npanel provides a guided setup experience to
 
 ✅ **Nameserver Verification:**
 - DNS backend type (BIND, PowerDNS, etc.)
-- Configured nameservers listed
-- Warning if no nameservers set
-- Ready for zone creation
+- System nameservers configured
+- Root domain name
+- Root domain nameservers
+- Warning if any nameserver config missing
 
 **Action:** Automatic - just verify all systems show green checkmarks
 

@@ -16,6 +16,8 @@ type SystemHealth = {
   }>;
   nameservers?: string[];
   dnsBackend?: string;
+  rootDomain?: string;
+  rootDomainNameservers?: string[];
 };
 
 export function SetupWizard({ onComplete }: { onComplete: () => void }) {
@@ -267,31 +269,72 @@ function HealthCheckStep({
         <div className="mb-3 text-sm font-semibold text-zinc-50">
           Nameserver Configuration
         </div>
-        <div className="space-y-2 text-xs text-zinc-400">
+        <div className="space-y-4 text-xs text-zinc-400">
+          {/* DNS Backend */}
           {health.dnsBackend && (
             <div>
               <span className="font-medium text-zinc-300">DNS Backend:</span>{" "}
               {health.dnsBackend}
             </div>
           )}
-          {health.nameservers && health.nameservers.length > 0 ? (
-            <div>
-              <div className="font-medium text-emerald-400 mb-1.5">
-                ✓ Nameservers Configured
-              </div>
+
+          {/* System Nameservers */}
+          <div className="border-t border-zinc-700 pt-3">
+            <div className="font-medium text-zinc-300 mb-2">
+              System Nameservers
+            </div>
+            {health.nameservers && health.nameservers.length > 0 ? (
               <div className="space-y-1 ml-2">
                 {health.nameservers.map((ns, idx) => (
-                  <div key={idx} className="text-zinc-300">
-                    • {ns}
+                  <div key={idx} className="text-zinc-300 flex items-center gap-2">
+                    <span className="text-emerald-400">✓</span> {ns}
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="text-yellow-400 font-medium">
+                ⚠ No system nameservers configured
+              </div>
+            )}
+          </div>
+
+          {/* Root Domain Nameservers */}
+          <div className="border-t border-zinc-700 pt-3">
+            <div className="font-medium text-zinc-300 mb-2">
+              Root Domain Configuration
             </div>
-          ) : (
-            <div className="text-yellow-400 font-medium">
-              ⚠ No nameservers configured
-            </div>
-          )}
+            {health.rootDomain ? (
+              <div className="space-y-2 ml-2">
+                <div className="text-zinc-300">
+                  <span className="text-emerald-400">✓</span> Domain:{" "}
+                  <span className="font-mono text-blue-400">{health.rootDomain}</span>
+                </div>
+                {health.rootDomainNameservers &&
+                health.rootDomainNameservers.length > 0 ? (
+                  <div>
+                    <div className="text-zinc-300 mb-1">
+                      <span className="text-emerald-400">✓</span> Nameservers:
+                    </div>
+                    <div className="space-y-1 ml-4">
+                      {health.rootDomainNameservers.map((ns, idx) => (
+                        <div key={idx} className="text-zinc-300 font-mono text-sm">
+                          {ns}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-yellow-400">
+                    ⚠ Root domain has no nameservers configured
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-yellow-400 font-medium">
+                ⚠ No root domain configured
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
