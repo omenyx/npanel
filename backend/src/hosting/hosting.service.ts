@@ -307,6 +307,15 @@ export class HostingService implements OnModuleInit {
     return service;
   }
 
+  async findServiceBySystemUsername(
+    systemUsername: string,
+  ): Promise<HostingServiceEntity | null> {
+    const service = await this.services.findOne({
+      where: { systemUsername },
+    });
+    return service ?? null;
+  }
+
   async listLogs(serviceId: string): Promise<HostingLog[]> {
     return this.logs.find({
       where: { serviceId },
