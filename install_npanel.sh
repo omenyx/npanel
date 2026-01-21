@@ -2117,7 +2117,7 @@ check_deployment_status() {
   
   # 2. Service Status
   log "🔧 SERVICES"
-  for svc in npanel-backend npanel-frontend npanel-nginx; do
+  for svc in npanel-backend npanel-frontend nginx; do
     local status=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
     if [[ "$status" == "active" ]]; then
       log "   ✓ $svc: RUNNING"
@@ -2216,7 +2216,7 @@ check_deployment_status() {
   local healthy=0
   systemctl is-active npanel-backend >/dev/null 2>&1 && healthy=$((healthy+1))
   systemctl is-active npanel-frontend >/dev/null 2>&1 && healthy=$((healthy+1))
-  systemctl is-active npanel-nginx >/dev/null 2>&1 && healthy=$((healthy+1))
+  systemctl is-active nginx >/dev/null 2>&1 && healthy=$((healthy+1))
   
   if [[ $healthy -eq 3 ]]; then
     log "✅ DEPLOYMENT STATUS: 🟢 GREEN - All systems operational"
@@ -2292,7 +2292,7 @@ main() {
     restart)
       require_root
       log "Restarting Npanel services..."
-      systemctl restart npanel-backend npanel-frontend npanel-nginx || die "Failed to restart services"
+      systemctl restart npanel-backend npanel-frontend nginx || die "Failed to restart services"
       log "Services restarted. Checking status..."
       sleep 2
       check_deployment_status
