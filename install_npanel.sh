@@ -2191,6 +2191,9 @@ parse_args() {
       --install) MODE="install"; shift ;;
       --diagnose|diagnose|--nginx-diagnose) MODE="diagnose"; shift ;;
       --status|status) MODE="status"; shift ;;
+      logs|--logs) MODE="logs"; shift ;;
+      restart|--restart) MODE="restart"; shift ;;
+      backend-logs|--backend-logs) MODE="backend-logs"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
       --ref) NPANEL_REF="$2"; shift 2 ;;
@@ -2217,6 +2220,31 @@ main() {
       exit $?
       ;;
     status)
+      check_deployment_status
+      exit $?
+      ;;
+    logs)
+      require_root
+      log "Displaying combined Npanel logs (last 50 lines)..."
+      echo "=== Backend Service Logs ==="
+      journalctl -u npanel-backend -n 50 --no-pager || echo "No backend logs available"
+      echo ""
+      echo "=== Frontend Service Logs ==="
+      journalctl -u npanel-frontend -n 50 --no-pager || echo "No frontend logs available"
+      exit 0
+      ;;
+    backend-logs)
+      require_root
+      log "Displaying Npanel backend logs (last 100 lines)..."
+      journalctl -u npanel-backend -n 100 --no-pager || echo "No backend logs available"
+      exit $?
+      ;;
+    restart)
+      require_root
+      log "Restarting Npanel services..."
+      systemctl restart npanel-backend npanel-frontend npanel-nginx || die "Failed to restart services"
+      log "Services restarted. Checking status..."
+      sleep 2
       check_deployment_status
       exit $?
       ;;
