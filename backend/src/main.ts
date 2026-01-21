@@ -29,6 +29,20 @@ async function bootstrap() {
     }
   }
   
+  // Pre-create SQLite database file if it doesn't exist
+  // This ensures the file is created before TypeORM tries to connect
+  if (!fs.existsSync(dbPath)) {
+    try {
+      // Create empty SQLite file - TypeORM will initialize it on first connection
+      fs.writeFileSync(dbPath, '');
+      fs.chmodSync(dbPath, 0o644);
+      console.log(`[DATABASE] Pre-created SQLite database file: ${dbPath}`);
+    } catch (error) {
+      console.error(`[DATABASE] Error pre-creating database file: ${error}`);
+      // Don't throw - let TypeORM handle it
+    }
+  }
+  
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
   const corsOriginsEnv =
