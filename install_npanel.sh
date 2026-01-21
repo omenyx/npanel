@@ -2332,6 +2332,29 @@ full_system_diagnostic() {
   fi
   log ""
   
+  # 6b. Nginx to Backend Connectivity
+  log "🔗 NGINX → BACKEND COMMUNICATION"
+  if curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; then
+    log "   ✓ Backend API accessible through nginx: http://127.0.0.1:8080/v1/health"
+  else
+    log "   ✗ Backend API NOT accessible through nginx: http://127.0.0.1:8080/v1/health"
+  fi
+  
+  # Verify nginx configuration is valid
+  if sudo nginx -t >/dev/null 2>&1; then
+    log "   ✓ Nginx configuration is valid"
+  else
+    log "   ✗ Nginx configuration has errors"
+  fi
+  
+  # Check if nginx can reach backend (check netstat)
+  if netstat -tn 2>/dev/null | grep -q "ESTABLISHED.*:3000" || ss -tn 2>/dev/null | grep -q "ESTAB.*:3000"; then
+    log "   ✓ Nginx has active connections to backend (port 3000)"
+  else
+    log "   ℹ Nginx has no active connections to backend (may be idle)"
+  fi
+  log ""
+  
   # 7. Recent Errors
   log "⚠️  RECENT SERVICE ERRORS (last 5 from each)"
   log "   Backend errors:"
