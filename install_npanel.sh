@@ -2045,12 +2045,152 @@ verify_deployment() {
   done
 }
 
+check_deployment_status() {
+  require_root
+  
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log "🔍 NPANEL DEPLOYMENT STATUS CHECK"
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log ""
+  
+  # 1. Directory Status
+  log "📂 INSTALLATION"
+  if [[ -d "$NPANEL_DIR" ]]; then
+    log "   ✓ Directory: $NPANEL_DIR (exists)"
+    if [[ -d "$NPANEL_DIR/.git" ]]; then
+      local current_commit=$(cd "$NPANEL_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+      local branch=$(cd "$NPANEL_DIR" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+      log "   ✓ Git: branch=$branch, commit=$current_commit"
+    else
+      log "   ⚠ Git: not a git repository"
+    fi
+  else
+    log "   ✗ Directory: $NPANEL_DIR (NOT FOUND)"
+  fi
+  log ""
+  
+  # 2. Service Status
+  log "🔧 SERVICES"
+  for svc in npanel-backend npanel-frontend npanel-nginx; do
+    local status=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
+    if [[ "$status" == "active" ]]; then
+      log "   ✓ $svc: RUNNING"
+    else
+      log "   ✗ $svc: $status"
+    fi
+  done
+  log ""
+  
+  # 3. Port Connectivity
+  log "🔌 PORTS"
+  local ports=(3000 3001 8080 2082 2083 2086 2087)
+  for port in "${ports[@]}"; do
+    if timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+      log "   ✓ Port $port: LISTENING"
+    else
+      log "   ✗ Port $port: NOT LISTENING"
+    fi
+  done
+  log ""
+  
+  # 4. Health Checks
+  log "❤️  HEALTH CHECKS"
+  if curl -fsS http://127.0.0.1:3000/v1/health >/dev/null 2>&1; then
+    log "   ✓ Backend (/v1/health): HEALTHY"
+  else
+    log "   ✗ Backend (/v1/health): FAILED or UNREACHABLE"
+  fi
+  
+  if curl -fsS http://127.0.0.1:8080/admin >/dev/null 2>&1; then
+    log "   ✓ Frontend (/admin): HEALTHY"
+  else
+    log "   ✗ Frontend (/admin): FAILED or UNREACHABLE"
+  fi
+  
+  if curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; then
+    log "   ✓ Nginx Proxy (/v1/health): HEALTHY"
+  else
+    log "   ✗ Nginx Proxy (/v1/health): FAILED or UNREACHABLE"
+  fi
+  log ""
+  
+  # 5. Configuration Files
+  log "📝 CONFIGURATION"
+  if [[ -f "$NPANEL_DIR/backend/.env" ]]; then
+    local jwt_set=$(grep -q "^JWT_SECRET=" "$NPANEL_DIR/backend/.env" && echo "yes" || echo "no")
+    log "   ✓ backend/.env: EXISTS (JWT_SECRET: $jwt_set)"
+  else
+    log "   ✗ backend/.env: MISSING"
+  fi
+  
+  if [[ -f "$NPANEL_DIR/frontend/.env.local" ]]; then
+    log "   ✓ frontend/.env.local: EXISTS"
+  else
+    log "   ⚠ frontend/.env.local: MISSING"
+  fi
+  
+  if [[ -f /etc/logrotate.d/npanel ]]; then
+    log "   ✓ /etc/logrotate.d/npanel: CONFIGURED"
+  else
+    log "   ⚠ /etc/logrotate.d/npanel: NOT CONFIGURED"
+  fi
+  log ""
+  
+  # 6. Log Files
+  log "📋 RECENT LOGS"
+  if [[ -f /var/log/npanel-backend.log ]]; then
+    local log_size=$(du -h /var/log/npanel-backend.log | cut -f1)
+    local log_lines=$(wc -l < /var/log/npanel-backend.log)
+    log "   ✓ Backend log: $log_size ($log_lines lines)"
+    log "     Last error (if any):"
+    grep -i error /var/log/npanel-backend.log | tail -1 | sed 's/^/     /' || log "     (none)"
+  else
+    log "   ⚠ Backend log: NOT FOUND"
+  fi
+  log ""
+  
+  # 7. Disk Usage
+  log "💾 DISK USAGE"
+  if [[ -d /opt/npanel ]]; then
+    local npanel_size=$(du -sh /opt/npanel 2>/dev/null | cut -f1)
+    log "   /opt/npanel: $npanel_size"
+  fi
+  if [[ -d /var/log ]]; then
+    local logs_size=$(du -sh /var/log 2>/dev/null | cut -f1)
+    local root_usage=$(df -h / | awk 'NR==2 {print $5}')
+    log "   /var/log: $logs_size"
+    log "   /: $root_usage used"
+  fi
+  log ""
+  
+  # 8. Summary
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  # Count healthy services
+  local healthy=0
+  systemctl is-active npanel-backend >/dev/null 2>&1 && healthy=$((healthy+1))
+  systemctl is-active npanel-frontend >/dev/null 2>&1 && healthy=$((healthy+1))
+  systemctl is-active npanel-nginx >/dev/null 2>&1 && healthy=$((healthy+1))
+  
+  if [[ $healthy -eq 3 ]]; then
+    log "✅ DEPLOYMENT STATUS: 🟢 GREEN - All systems operational"
+  elif [[ $healthy -ge 1 ]]; then
+    log "⚠️  DEPLOYMENT STATUS: 🟡 YELLOW - Partial service availability ($healthy/3 services running)"
+  else
+    log "❌ DEPLOYMENT STATUS: 🔴 RED - Services not running"
+  fi
+  
+  log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log ""
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --update) MODE="update"; shift ;;
       --install) MODE="install"; shift ;;
       --diagnose|diagnose|--nginx-diagnose) MODE="diagnose"; shift ;;
+      --status|status) MODE="status"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
       --ref) NPANEL_REF="$2"; shift 2 ;;
@@ -2074,6 +2214,10 @@ main() {
       require_root
       log "Npanel Nginx Diagnostics"
       diagnose_nginx
+      exit $?
+      ;;
+    status)
+      check_deployment_status
       exit $?
       ;;
   esac
