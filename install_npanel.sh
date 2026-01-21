@@ -1633,9 +1633,17 @@ configure_nginx() {
   else
     conf="/etc/nginx/conf.d/npanel.conf"
   fi
+  
+  # Check if config exists and has the required port definitions
   if [[ -f "$conf" ]]; then
-    return
+    if grep -q "listen 2086" "$conf" 2>/dev/null; then
+      return  # Config is complete and up-to-date
+    fi
+    # Config exists but is outdated - back it up and recreate
+    log "Updating nginx configuration with missing port definitions..."
+    cp "$conf" "${conf}.backup.$(date +%s)"
   fi
+  
   mkdir -p "$(dirname "$conf")"
   log "Writing nginx configuration with /v1 API routing support..."
   cat > "$conf" <<'NGCONF'
@@ -2194,6 +2202,7 @@ parse_args() {
       logs|--logs) MODE="logs"; shift ;;
       restart|--restart) MODE="restart"; shift ;;
       backend-logs|--backend-logs) MODE="backend-logs"; shift ;;
+      --rebuild-nginx) MODE="rebuild-nginx"; shift ;;
       --repo) REPO_URL="$2"; shift 2 ;;
       --branch) NPANEL_BRANCH="$2"; shift 2 ;;
       --ref) NPANEL_REF="$2"; shift 2 ;;
@@ -2245,6 +2254,16 @@ main() {
       systemctl restart npanel-backend npanel-frontend npanel-nginx || die "Failed to restart services"
       log "Services restarted. Checking status..."
       sleep 2
+      check_deployment_status
+      exit $?
+      ;;
+    rebuild-nginx)
+      require_root
+      log "Rebuilding nginx configuration..."
+      # Remove existing config to force regeneration
+      rm -f /etc/nginx/conf.d/npanel.conf /etc/nginx/sites-available/npanel.conf /etc/nginx/sites-enabled/npanel.conf
+      configure_nginx
+      log "✓ Nginx configuration rebuilt successfully"
       check_deployment_status
       exit $?
       ;;
@@ -2409,12 +2428,14 @@ main() {
   log "   │  Follow backend logs live:                              │"
   log "   │  sudo ./install_npanel.sh backend-logs                  │"
   log "   │                                                         │"
+  log "   │  Fix missing admin/customer ports (2082-2087):          │"
+  log "   │  sudo ./install_npanel.sh --rebuild-nginx               │"
+  log "   │                                                         │"
   log "   │  Run nginx diagnostics:                                 │"
   log "   │  sudo ./install_npanel.sh --diagnose                    │"
   log "   └─────────────────────────────────────────────────────────┘"
   log ""
-  
-  log "🔐 SSL CERTIFICATE SETUP (Production)"
+    log "🔐 SSL CERTIFICATE SETUP (Production)"
   log "   ┌─────────────────────────────────────────────────────────┐"
   log "   │  Using Let's Encrypt:                                   │"
   log "   │                                                         │"
