@@ -1178,7 +1178,8 @@ After=network.target npanel-backend.service
 [Service]
 Type=simple
 WorkingDirectory=$NPANEL_DIR/frontend
-ExecStart=${CMD_NPM:-/usr/bin/npm} start -- -p 3001
+Environment="NODE_ENV=production"
+ExecStart=${CMD_NPM:-/usr/bin/npm} run start -- -p 3001
 Restart=always
 User=root
 StandardOutput=append:/var/log/npanel-frontend.log
