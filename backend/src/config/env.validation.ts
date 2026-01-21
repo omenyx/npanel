@@ -70,7 +70,9 @@ export function validateEnvironment(): void {
       continue;
     }
 
-    logger.debug(`✓ ${envVar.name}=${value.substring(0, 10)}...`);
+    if (value) {
+      logger.debug(`✓ ${envVar.name}=${value.substring(0, 10)}...`);
+    }
   }
 
   // Production-specific checks
