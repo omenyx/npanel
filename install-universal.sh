@@ -203,43 +203,7 @@ phase_dependencies() {
         exit 1
       }
       
-      # Install Go
-      log_info "Installing Go..."
-      
-      # Check if Go already installed and is correct version
-      if command -v go &> /dev/null; then
-        local installed_version=$(go version 2>&1 | awk '{print $3}')
-        if [ "$installed_version" = "go1.23" ] || [ "$installed_version" = "go1.23.0" ]; then
-          log_success "Go 1.23 already installed"
-        else
-          log_warn "Go version $installed_version found, need 1.23, installing binary version..."
-          mkdir -p /tmp/go-install && cd /tmp/go-install
-          wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
-          if [ -f go1.23.linux-amd64.tar.gz ]; then
-            tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
-            echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-            chmod +x /etc/profile.d/go-path.sh
-          fi
-          cd - > /dev/null && rm -rf /tmp/go-install
-        fi
-      else
-        log_warn "Go not found, trying fallback binary install..."
-        mkdir -p /tmp/go-install && cd /tmp/go-install
-        wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
-        if [ -f go1.23.linux-amd64.tar.gz ]; then
-          tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
-          echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-          chmod +x /etc/profile.d/go-path.sh
-        fi
-        cd - > /dev/null && rm -rf /tmp/go-install
-      fi
-      
-      if ! command -v go &> /dev/null; then
-        log_error "Go installation failed"
-        exit 1
-      fi
-      
-      log_success "Go verified: $(go version)"
+      log_success "System packages installed"
       
       # Install Node.js
       log_info "Installing Node.js 20..."
@@ -267,43 +231,7 @@ phase_dependencies() {
         exit 1
       }
       
-      # Install Go
-      log_info "Installing Go..."
-      
-      # Check if Go already installed and is correct version
-      if command -v go &> /dev/null; then
-        local installed_version=$(go version 2>&1 | awk '{print $3}')
-        if [ "$installed_version" = "go1.23" ] || [ "$installed_version" = "go1.23.0" ]; then
-          log_success "Go 1.23 already installed"
-        else
-          log_warn "Go version $installed_version found, need 1.23, installing binary version..."
-          mkdir -p /tmp/go-install && cd /tmp/go-install
-          wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
-          if [ -f go1.23.linux-amd64.tar.gz ]; then
-            tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
-            echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-            chmod +x /etc/profile.d/go-path.sh
-          fi
-          cd - > /dev/null && rm -rf /tmp/go-install
-        fi
-      else
-        log_warn "Go not found, trying fallback binary install..."
-        mkdir -p /tmp/go-install && cd /tmp/go-install
-        wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
-        if [ -f go1.23.linux-amd64.tar.gz ]; then
-          tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
-          echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-          chmod +x /etc/profile.d/go-path.sh
-        fi
-        cd - > /dev/null && rm -rf /tmp/go-install
-      fi
-      
-      if ! command -v go &> /dev/null; then
-        log_error "Go installation failed"
-        exit 1
-      fi
-      
-      log_success "Go verified: $(go version)"
+      log_success "System packages installed"
       
       log_success "Go verified: $(go version)"
       log_info "Installing system packages..."
@@ -344,30 +272,23 @@ phase_dependencies() {
 phase_binaries() {
   log_info "PHASE 5/7: BINARY BUILD & DEPLOYMENT"
   
-  # CRITICAL: Ensure absolute path to Go for subshells
-  export PATH="/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-  
-  # Source any profile scripts that might set Go
-  if [ -f /etc/profile.d/go-path.sh ]; then
-    source /etc/profile.d/go-path.sh
-  fi
-  
-  # CRITICAL: Verify Go absolutely works
-  log_info "Verifying Go installation..."
-  if ! /usr/local/go/bin/go version > /dev/null 2>&1; then
-    log_error "CRITICAL: Go binary at /usr/local/go/bin/go doesn't work"
-    log_error "This usually means Go installation failed or binary is corrupted"
-    log_error "Try running manually: /usr/local/go/bin/go version"
-    exit "$EXIT_UNRECOVERABLE"
-  fi
-  
-  local go_version
-  go_version=$(/usr/local/go/bin/go version)
-  log_success "Go verified: $go_version"
-  
   local staging_dir="/tmp/npanel-staging-$$"
   local bin_dir="$INSTALL_PATH/bin"
   local source_dir="."
+  
+  # Verify Go is available (simple check)
+  if ! command -v go &> /dev/null; then
+    log_error "Go not available in PATH after Phase 4"
+    exit "$EXIT_UNRECOVERABLE"
+  fi
+  log_success "Go available: $(go version)"
+  
+  # Verify Go is available (simple check)
+  if ! command -v go &> /dev/null; then
+    log_error "Go not available in PATH after Phase 4"
+    exit "$EXIT_UNRECOVERABLE"
+  fi
+  log_success "Go available: $(go version)"
   
   # Create directories
   mkdir -p "$INSTALL_PATH" "$DATA_PATH" "$bin_dir" "$staging_dir"
@@ -404,17 +325,14 @@ phase_binaries() {
     log_info "Working directory: $(pwd)"
     log_info "Downloading Go modules (this may take 2-3 minutes)..."
     
-    # Use absolute path to go binary
-    local go_bin="/usr/local/go/bin/go"
-    
-    # Try go mod download first
-    if $go_bin mod download 2>&1 | tee -a "$LOG_FILE"; then
+    # Try go mod download first (use whatever go is available)
+    if go mod download 2>&1 | tee -a "$LOG_FILE"; then
       log_success "Go modules downloaded successfully"
     else
       log_warn "go mod download failed, attempting go mod vendor fallback..."
       
       # Fallback: use vendor directory
-      if ! $go_bin mod vendor >> "$LOG_FILE" 2>&1; then
+      if ! go mod vendor >> "$LOG_FILE" 2>&1; then
         log_error "Both go mod download and go mod vendor failed"
         log_error "Last 30 lines of build log:"
         tail -30 "$LOG_FILE" | sed 's/^/  /'
@@ -426,7 +344,7 @@ phase_binaries() {
     fi
     
     log_info "Building binary..."
-    if ! $go_bin build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
+    if ! go build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build backend API"
       cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
