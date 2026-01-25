@@ -291,7 +291,10 @@ check_required_repos() {
 }
 
 set_version_matrix() {
-  case "$DISTRO-$VERSION" in
+  # Extract major version for RHEL-based distros
+  local VERSION_MAJOR="${VERSION%%.*}"
+  
+  case "$DISTRO-$VERSION_MAJOR" in
     ubuntu-20.04)
       SYSTEMD_MIN="245"; SYSTEMD_MAX="245.999"
       KERNEL_MIN="5.4"; KERNEL_MAX="5.4.999"
