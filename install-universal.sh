@@ -383,7 +383,7 @@ get_systemd_version() { systemctl --version | head -n1 | awk '{print $2}'; }
 get_kernel_version() { uname -r | cut -d- -f1; }
 get_glibc_version() { ldd --version 2>/dev/null | head -n1 | awk '{print $NF}'; }
 get_openssl_version() { openssl version | awk '{print $2}'; }
-get_curl_version() { curl --version | awk '{print $2}'; }
+get_curl_version() { curl --version | head -1 | awk '{print $2}'; }
 get_tar_version() { tar --version | head -n1 | awk '{print $NF}'; }
 get_sqlite_version() { sqlite3 --version | awk '{print $1}'; }
 get_mariadb_version() { (mariadb --version 2>/dev/null || mysql --version 2>/dev/null) | sed -E 's/.*Distrib ([0-9.]+).*/\1/'; }
