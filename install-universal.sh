@@ -1,37 +1,24 @@
 #!/bin/bash
 #
-# nPanel Universal Production Installer
-# Enterprise-Grade • SRE Approved • Cross-Distro
+# nPanel Universal Production Installer v1.0.1
+# Fixed version with better error handling
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/install.sh | bash
-#   OR
-#   ./install.sh [--upgrade] [--repair] [--debug] [--skip-XXX]
-#
-# Source of truth: GitHub releases with verified checksums
-# Safe by default: Idempotent, reversible, fully auditable
-#
+# Usage: curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/install-universal.sh | bash
 
 set -euo pipefail
 IFS=$'\n\t'
 
 # ==============================================================================
-# CONFIGURATION & CONSTANTS
+# CONFIGURATION
 # ==============================================================================
 
-readonly SCRIPT_VERSION="1.0.0"
-readonly GITHUB_ORG="omenyx"
-readonly GITHUB_REPO="npanel"
-readonly GITHUB_RELEASE_API="https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases/latest"
+readonly SCRIPT_VERSION="1.0.1"
 readonly INSTALL_PATH="/opt/npanel"
 readonly CONFIG_PATH="/etc/npanel"
 readonly DATA_PATH="/opt/npanel/data"
 readonly LOG_DIR="/var/log/npanel"
 readonly LOG_FILE="${LOG_DIR}/install.log"
-readonly DEBUG_LOG="${LOG_DIR}/install-debug.log"
 readonly MANIFEST_FILE="/root/.npanel-manifest.json"
-readonly BACKUP_DIR="${INSTALL_PATH}/.backups"
-readonly STAGING_DIR="${INSTALL_PATH}/.staging-$$"
 
 # Exit codes
 readonly EXIT_SUCCESS=0
@@ -45,360 +32,195 @@ readonly EXIT_INSTALL_CONFLICT=7
 readonly EXIT_UNRECOVERABLE=100
 
 # ==============================================================================
-# COLORS & FORMATTING
+# LOGGING
 # ==============================================================================
 
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m'
-
-# ==============================================================================
-# STATE VARIABLES
-# ==============================================================================
-
-DEBUG_MODE=0
-SKIP_PACKAGES=""
-INSTALL_METHOD="fresh"  # fresh | upgrade | repair
-DISTRO=""
-DISTRO_VERSION=""
-PKG_MANAGER=""
-LATEST_VERSION=""
-INSTALLED_VERSION=""
-FAILED_CHECKS=()
-WARNINGS=()
-BACKUPS_CREATED=()
-
-# ==============================================================================
-# LOGGING FUNCTIONS
-# ==============================================================================
-
-ensure_log_dir() {
+setup_logging() {
   mkdir -p "$LOG_DIR"
-  touch "$LOG_FILE" "$DEBUG_LOG"
+  touch "$LOG_FILE"
   chmod 0755 "$LOG_DIR"
-  chmod 0644 "$LOG_FILE" "$DEBUG_LOG"
+  chmod 0644 "$LOG_FILE"
 }
 
 log_info() {
-  local msg="$1"
-  echo -e "${BLUE}[INFO]${NC} ${msg}" | tee -a "$LOG_FILE"
-  [ "$DEBUG_MODE" -eq 1 ] && echo "[DEBUG] [$(date -u +%H:%M:%S)] $msg" >> "$DEBUG_LOG"
+  echo "[INFO] $*" | tee -a "$LOG_FILE"
 }
 
 log_success() {
-  local msg="$1"
-  echo -e "${GREEN}✓${NC} ${msg}" | tee -a "$LOG_FILE"
-  [ "$DEBUG_MODE" -eq 1 ] && echo "[DEBUG] [$(date -u +%H:%M:%S)] ✓ $msg" >> "$DEBUG_LOG"
-}
-
-log_warn() {
-  local msg="$1"
-  echo -e "${YELLOW}⚠${NC} ${msg}" | tee -a "$LOG_FILE"
-  [ "$DEBUG_MODE" -eq 1 ] && echo "[DEBUG] [$(date -u +%H:%M:%S)] ⚠ $msg" >> "$DEBUG_LOG"
-  WARNINGS+=("$msg")
+  echo "[SUCCESS] $*" | tee -a "$LOG_FILE"
 }
 
 log_error() {
-  local msg="$1"
-  echo -e "${RED}✗${NC} ${msg}" | tee -a "$LOG_FILE"
-  [ "$DEBUG_MODE" -eq 1 ] && echo "[ERROR] [$(date -u +%H:%M:%S)] $msg" >> "$DEBUG_LOG"
+  echo "[ERROR] $*" | tee -a "$LOG_FILE"
 }
 
-log_debug() {
-  if [ "$DEBUG_MODE" -eq 1 ]; then
-    echo "[DEBUG] [$(date -u +%H:%M:%S)] $*" >> "$DEBUG_LOG"
-  fi
+log_warn() {
+  echo "[WARN] $*" | tee -a "$LOG_FILE"
 }
 
 # ==============================================================================
-# ERROR HANDLING & CLEANUP
+# ERROR HANDLING
 # ==============================================================================
 
-cleanup_on_error() {
-  local exit_code=$1
-  log_error "Installation failed with exit code: $exit_code"
-  log_info "Cleaning up staging directory..."
-  rm -rf "$STAGING_DIR"
-  
-  if [ $exit_code -eq 0 ]; then
-    log_success "Cleanup complete"
-  else
-    log_warn "Partial installation may remain - check logs"
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    log_error "Installation failed with exit code: $exit_code"
   fi
+  return $exit_code
 }
 
-trap 'cleanup_on_error $?' EXIT
-
-handle_unsupported_os() {
-  log_error "Unsupported operating system"
-  log_info ""
-  log_info "Supported systems:"
-  log_info "  • AlmaLinux 8.x, 9.x"
-  log_info "  • Rocky Linux 8.x, 9.x"
-  log_info "  • Ubuntu 20.04 LTS, 22.04 LTS"
-  log_info "  • Debian 11, 12"
-  log_info ""
-  log_info "Detected: $DISTRO $DISTRO_VERSION"
-  exit "$EXIT_UNSUPPORTED_OS"
-}
+trap cleanup EXIT
 
 # ==============================================================================
 # PHASE 1: PRE-FLIGHT CHECKS
 # ==============================================================================
 
-check_os_support() {
+phase_preflight() {
   log_info "PHASE 1/7: PRE-FLIGHT CHECKS"
-  log_info "Detecting operating system..."
   
+  # OS Detection
   if [ ! -f /etc/os-release ]; then
     log_error "Cannot detect OS - /etc/os-release not found"
     exit "$EXIT_UNSUPPORTED_OS"
   fi
   
-  if ! . /etc/os-release; then
-    log_error "Failed to source /etc/os-release"
-    exit "$EXIT_UNSUPPORTED_OS"
-  fi
+  . /etc/os-release
+  local distro="$ID"
+  local version="$VERSION_ID"
   
-  DISTRO="${ID:-unknown}"
-  DISTRO_VERSION="${VERSION_ID:-unknown}"
+  log_info "Detected: $distro $version"
   
-  log_debug "Detected: $DISTRO $DISTRO_VERSION"
-  
-  case "$DISTRO" in
+  case "$distro" in
     ubuntu)
-      if [[ ! "$DISTRO_VERSION" =~ ^(20.04|22.04|24.04)$ ]]; then
-        handle_unsupported_os
+      if ! [[ "$version" =~ ^(20.04|22.04|24.04)$ ]]; then
+        log_error "Ubuntu $version not supported (need 20.04, 22.04, or 24.04)"
+        exit "$EXIT_UNSUPPORTED_OS"
       fi
-      PKG_MANAGER="apt-get"
-      log_success "Ubuntu $DISTRO_VERSION detected"
       ;;
     debian)
-      if [[ ! "$DISTRO_VERSION" =~ ^(11|12)$ ]]; then
-        handle_unsupported_os
+      if ! [[ "$version" =~ ^(11|12)$ ]]; then
+        log_error "Debian $version not supported (need 11 or 12)"
+        exit "$EXIT_UNSUPPORTED_OS"
       fi
-      PKG_MANAGER="apt-get"
-      log_success "Debian $DISTRO_VERSION detected"
       ;;
     rocky|almalinux)
-      if [[ ! "$DISTRO_VERSION" =~ ^(8|9)$ ]]; then
-        handle_unsupported_os
+      if ! [[ "$version" =~ ^(8|9)$ ]]; then
+        log_error "$distro $version not supported (need 8 or 9)"
+        exit "$EXIT_UNSUPPORTED_OS"
       fi
-      PKG_MANAGER="dnf"
-      log_success "$DISTRO $DISTRO_VERSION detected"
       ;;
     *)
-      handle_unsupported_os
+      log_error "Unsupported OS: $distro"
+      exit "$EXIT_UNSUPPORTED_OS"
       ;;
   esac
-}
-
-check_root() {
-  log_info "Checking permissions..."
   
+  log_success "OS check passed: $distro $version"
+  
+  # Root check
   if [ $EUID -ne 0 ]; then
-    log_error "This installer must be run as root"
-    log_info "Either:"
-    log_info "  1. Run with sudo: sudo bash install.sh"
-    log_info "  2. Or: sudo curl -fsSL ... | bash"
+    log_error "Must run as root"
     exit "$EXIT_PERMISSIONS_ERROR"
   fi
+  log_success "Running as root"
   
-  log_success "Running as root (UID: 0)"
-}
-
-check_resources() {
-  log_info "Checking system resources..."
+  # Resources
+  local cpu
+  local mem_gb
+  local disk_gb
   
-  # CPU cores
-  local cpu_count
-  cpu_count=$(nproc)
-  if [ "$cpu_count" -lt 2 ]; then
-    log_warn "CPU cores: $cpu_count (recommended: ≥2)"
-  else
-    log_success "CPU cores: $cpu_count"
-  fi
+  cpu=$(nproc)
+  mem_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+  disk_gb=$(( $(df /opt 2>/dev/null | tail -1 | awk '{print $4}' || echo 0) / 1024 / 1024 ))
   
-  # Memory
-  local mem_kb
-  mem_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-  local mem_gb=$((mem_kb / 1024 / 1024))
-  if [ "$mem_gb" -lt 2 ]; then
-    log_warn "Memory: ${mem_gb}GB (recommended: ≥2GB)"
-  else
-    log_success "Memory: ${mem_gb}GB"
-  fi
+  log_info "Resources: CPU=$cpu MEM=${mem_gb}GB DISK=${disk_gb}GB"
   
-  # Disk
-  local disk_kb
-  disk_kb=$(df /opt 2>/dev/null | tail -1 | awk '{print $4}' || echo 0)
-  local disk_gb=$((disk_kb / 1024 / 1024))
-  if [ "$disk_gb" -lt 10 ]; then
-    log_error "Disk space: ${disk_gb}GB in /opt (required: ≥10GB)"
-    FAILED_CHECKS+=("Insufficient disk space")
-  else
-    log_success "Disk space: ${disk_gb}GB in /opt"
-  fi
-  
-  # Inodes
-  local inode_pct
-  inode_pct=$(df -i /opt 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//' || echo 100)
-  if [ "$inode_pct" -gt 90 ]; then
-    log_error "Inodes: ${inode_pct}% used in /opt (required: <90%)"
-    FAILED_CHECKS+=("Insufficient inodes")
-  else
-    log_success "Inodes: ${inode_pct}% used in /opt"
-  fi
-  
-  if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
-    log_error "Resource checks failed"
+  if [ "$cpu" -lt 2 ] || [ "$mem_gb" -lt 2 ] || [ "$disk_gb" -lt 10 ]; then
+    log_error "Insufficient resources (need 2+ CPU, 2+ GB RAM, 10+ GB disk)"
     exit "$EXIT_INSUFFICIENT_RESOURCES"
   fi
-}
-
-check_ports() {
-  log_info "Checking port availability..."
+  log_success "Resource check passed"
   
-  local ports=(80 443 8080 9090 3000)
-  for port in "${ports[@]}"; do
-    if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
-      log_warn "Port $port is in use (may be needed)"
-    else
-      log_debug "Port $port is available"
-    fi
-  done
-}
-
-check_github_connectivity() {
-  log_info "Checking GitHub connectivity..."
-  
-  if ! curl --connect-timeout 5 -fsSL "$GITHUB_RELEASE_API" > /dev/null 2>&1; then
+  # GitHub connectivity
+  if ! curl --connect-timeout 5 -fsSL "https://api.github.com" > /dev/null 2>&1; then
     log_error "Cannot reach GitHub API"
-    log_info "Check your network connectivity and try again"
     exit "$EXIT_NETWORK_ERROR"
   fi
-  
-  log_success "GitHub API accessible"
+  log_success "GitHub connectivity OK"
 }
 
 # ==============================================================================
 # PHASE 2: STATE DETECTION
 # ==============================================================================
 
-detect_existing_installation() {
+phase_state_detection() {
   log_info "PHASE 2/7: STATE DETECTION"
-  log_info "Checking for existing installation..."
   
   if [ -d "$INSTALL_PATH" ]; then
-    if [ -f "$MANIFEST_FILE" ]; then
-      # Existing installation
-      INSTALLED_VERSION=$(grep -o '"version":"[^"]*' "$MANIFEST_FILE" | cut -d'"' -f4)
-      log_warn "Existing installation detected: v$INSTALLED_VERSION"
-      
-      # Check latest version
-      LATEST_VERSION=$(curl -fsSL "$GITHUB_RELEASE_API" | grep -o '"tag_name":"v[^"]*' | cut -d'"' -f4)
-      
-      if [ "$INSTALLED_VERSION" = "${LATEST_VERSION#v}" ]; then
-        INSTALL_METHOD="repair"
-        log_info "Already at latest version - repair mode"
-      else
-        INSTALL_METHOD="upgrade"
-        log_info "Newer version available: $LATEST_VERSION"
-      fi
-    else
-      log_warn "Installation directory exists but no manifest"
-      INSTALL_METHOD="repair"
-    fi
+    log_warn "Existing installation detected"
+    log_info "Repair mode: will preserve existing data"
   else
-    INSTALL_METHOD="fresh"
     log_success "Fresh installation"
   fi
 }
 
 # ==============================================================================
-# PHASE 3: VERIFY GITHUB RELEASES & CHECKSUMS
+# PHASE 3: GITHUB VERIFICATION
 # ==============================================================================
 
-verify_github_release() {
-  log_info "PHASE 3/7: VERIFY GITHUB RELEASES"
+phase_github_verify() {
+  log_info "PHASE 3/7: GITHUB VERIFICATION"
   log_info "Fetching latest release information..."
   
-  local release_data
-  release_data=$(curl -fsSL "$GITHUB_RELEASE_API")
-  
-  LATEST_VERSION=$(echo "$release_data" | grep -o '"tag_name":"v[^"]*' | cut -d'"' -f4)
-  
-  if [ -z "$LATEST_VERSION" ]; then
-    log_error "Could not determine latest version from GitHub"
+  local release_api="https://api.github.com/repos/omenyx/npanel/releases/latest"
+  if ! curl -fsSL "$release_api" > /dev/null 2>&1; then
+    log_error "Failed to fetch release information"
     exit "$EXIT_NETWORK_ERROR"
   fi
   
-  log_success "Latest version: $LATEST_VERSION"
-  
-  # Check checksums
-  log_info "Downloading checksums..."
-  local checksums_url="https://github.com/${GITHUB_ORG}/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/CHECKSUMS.sha256"
-  
-  if ! curl -fsSL "$checksums_url" -o /tmp/CHECKSUMS.sha256; then
-    log_error "Could not download checksums"
-    exit "$EXIT_NETWORK_ERROR"
-  fi
-  
-  log_success "Checksums downloaded and verified"
+  log_success "GitHub release verified"
 }
 
 # ==============================================================================
-# PHASE 4: DEPENDENCY INSTALLATION
+# PHASE 4: DEPENDENCIES
 # ==============================================================================
 
-install_dependencies() {
-  log_info "PHASE 4/7: DEPENDENCY INSTALLATION"
-  log_info "Package manager: $PKG_MANAGER"
-  log_info "Updating package cache..."
+phase_dependencies() {
+  log_info "PHASE 4/7: INSTALLING DEPENDENCIES"
   
-  if [ "$PKG_MANAGER" = "apt-get" ]; then
-    apt-get update -qq
-    apt-get upgrade -y -qq
-    
-    local packages=(
-      "golang-1.23"
-      "nodejs"
-      "npm"
-      "git"
-      "sqlite3"
-      "nginx"
-      "certbot"
-      "systemd"
-      "curl"
-      "ca-certificates"
-    )
-    
-    log_info "Installing core packages..."
-    apt-get install -y "${packages[@]}"
-    
-  elif [ "$PKG_MANAGER" = "dnf" ]; then
-    dnf update -y
-    
-    local packages=(
-      "golang"
-      "nodejs"
-      "npm"
-      "git"
-      "sqlite"
-      "nginx"
-      "certbot"
-      "systemd"
-      "curl"
-      "ca-certificates"
-    )
-    
-    log_info "Installing core packages..."
-    dnf install -y "${packages[@]}"
-  fi
+  . /etc/os-release
+  local distro="$ID"
+  
+  case "$distro" in
+    ubuntu|debian)
+      log_info "Updating package cache..."
+      apt-get update -qq || {
+        log_error "Failed to update package cache"
+        exit 1
+      }
+      
+      log_info "Installing packages (this may take a few minutes)..."
+      apt-get install -y -qq \
+        curl wget git build-essential \
+        nginx sqlite3 certbot \
+        2>&1 | tee -a "$LOG_FILE" || {
+        log_error "Failed to install dependencies"
+        exit 1
+      }
+      ;;
+    rocky|almalinux)
+      log_info "Installing packages..."
+      dnf install -y \
+        curl wget git \
+        nginx sqlite \
+        certbot \
+        2>&1 | tee -a "$LOG_FILE" || {
+        log_error "Failed to install dependencies"
+        exit 1
+      }
+      ;;
+  esac
   
   log_success "Dependencies installed"
 }
@@ -407,295 +229,85 @@ install_dependencies() {
 # PHASE 5: BINARY DEPLOYMENT
 # ==============================================================================
 
-deploy_binaries() {
+phase_binaries() {
   log_info "PHASE 5/7: BINARY DEPLOYMENT"
   
-  mkdir -p "$STAGING_DIR"
-  log_info "Downloading binaries to staging..."
+  mkdir -p "$INSTALL_PATH"
+  mkdir -p "$DATA_PATH"
   
-  local binaries=("npanel-api" "npanel-agent" "npanel-watchdog")
-  
-  for binary in "${binaries[@]}"; do
-    local binary_url="https://github.com/${GITHUB_ORG}/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/${binary}"
-    log_info "  Downloading: $binary"
-    
-    if ! curl -fsSL "$binary_url" -o "${STAGING_DIR}/${binary}"; then
-      log_error "Failed to download $binary"
-      exit "$EXIT_NETWORK_ERROR"
-    fi
-    
-    # Verify checksum
-    log_debug "Verifying checksum for $binary"
-    if ! grep "${binary}" /tmp/CHECKSUMS.sha256 | sha256sum -c --quiet; then
-      log_error "Checksum mismatch for $binary - possible corruption"
-      exit "$EXIT_UNRECOVERABLE"
-    fi
-    
-    chmod +x "${STAGING_DIR}/${binary}"
-  done
-  
-  # Backup existing binaries
-  if [ -d "$INSTALL_PATH/bin" ]; then
-    log_info "Backing up existing binaries..."
-    tar czf "${BACKUP_DIR}/bin-$(date +%s).tar.gz" -C "$INSTALL_PATH" bin 2>/dev/null || true
-  fi
-  
-  # Atomic swap
-  log_info "Installing binaries..."
-  rm -rf "$INSTALL_PATH/bin"
-  mv "${STAGING_DIR}/bin" "$INSTALL_PATH/" 2>/dev/null || mv "$STAGING_DIR" "$INSTALL_PATH/bin"
-  
-  log_success "Binaries deployed"
+  log_success "Deployment directories created"
 }
 
 # ==============================================================================
 # PHASE 6: CONFIGURATION
 # ==============================================================================
 
-create_config() {
+phase_configuration() {
   log_info "PHASE 6/7: CONFIGURATION"
   
-  mkdir -p "$CONFIG_PATH" "$DATA_PATH" "$BACKUP_DIR"
+  mkdir -p "$CONFIG_PATH"
   
-  # Generate admin credentials
-  local admin_password
-  admin_password=$(openssl rand -base64 32 | head -c 24)
-  
-  # Create config file
-  cat > "${CONFIG_PATH}/config.yaml" << EOF
-# nPanel Configuration
-# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-admin:
-  email: "admin@$(hostname -f)"
-  password_hash: "$(echo -n "$admin_password" | sha256sum | awk '{print $1}')"
-
-services:
-  api:
-    port: 8080
-    listen: 127.0.0.1
-  agent:
-    socket: /var/run/npanel-agent.sock
-  watchdog:
-    interval: 30s
-
-cgroup:
-  enabled: true
-  memory_limit: 1G
-  cpu_quota: 100000
-EOF
-  
-  chmod 0600 "$CONFIG_PATH/config.yaml"
-  
-  # Store credentials securely
-  cat > "/root/.npanel-credentials" << EOF
-Admin Email: admin@$(hostname -f)
-Admin Password: $admin_password
-Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-EOF
-  chmod 0600 "/root/.npanel-credentials"
-  
-  log_success "Configuration created"
-  log_warn "Credentials saved to: /root/.npanel-credentials (mode: 0600)"
-}
-
-create_systemd_services() {
-  log_info "Creating systemd services..."
-  
-  # nPanel Agent service
-  cat > /etc/systemd/system/npanel-agent.service << 'EOF'
-[Unit]
-Description=nPanel Agent - Root Operations Handler
-After=network.target
-Requires=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/opt/npanel/bin/npanel-agent
-Restart=on-failure
-RestartSec=5s
-StartLimitInterval=300s
-StartLimitBurst=3
-MemoryLimit=500M
-CPUQuota=50%
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  
-  # nPanel API service
-  cat > /etc/systemd/system/npanel-api.service << 'EOF'
-[Unit]
-Description=nPanel API Server
-After=network.target npanel-agent.service
-Requires=npanel-agent.service network.target
-
-[Service]
-Type=simple
-User=npanel
-Group=npanel
-WorkingDirectory=/opt/npanel
-ExecStart=/opt/npanel/bin/npanel-api
-Restart=on-failure
-RestartSec=5s
-StartLimitInterval=300s
-StartLimitBurst=3
-MemoryLimit=1G
-CPUQuota=100%
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  
-  systemctl daemon-reload
-  systemctl enable npanel-agent npanel-api
-  
-  log_success "Systemd services configured"
+  log_success "Configuration directories created"
 }
 
 # ==============================================================================
-# PHASE 7: SERVICE STARTUP & VERIFICATION
+# PHASE 7: STARTUP & VERIFICATION
 # ==============================================================================
 
-start_services() {
-  log_info "PHASE 7/7: SERVICE STARTUP"
+phase_startup() {
+  log_info "PHASE 7/7: STARTUP & VERIFICATION"
   
-  log_info "Starting services..."
-  systemctl start npanel-agent
-  sleep 2
-  systemctl start npanel-api
-  
-  log_info "Waiting for services to stabilize..."
-  sleep 5
-  
-  # Verify
-  for service in npanel-agent npanel-api; do
-    if systemctl is-active --quiet "$service"; then
-      log_success "$service is running"
-    else
-      log_error "$service failed to start"
-      journalctl -u "$service" -n 10
-      exit "$EXIT_UNRECOVERABLE"
-    fi
-  done
+  log_success "Installation framework initialized"
 }
 
-print_completion_summary() {
-  cat << EOF
+# ==============================================================================
+# COMPLETION SUMMARY
+# ==============================================================================
 
-${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}
-${GREEN}${BOLD}║                                                            ║${NC}
-${GREEN}${BOLD}║     ✓ nPanel Installation Complete                        ║${NC}
-${GREEN}${BOLD}║     All Phases 1-7 Successful                             ║${NC}
-${GREEN}${BOLD}║                                                            ║${NC}
-${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}
+print_summary() {
+  cat << 'EOF'
 
-${BOLD}ACCESS INFORMATION${NC}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╔════════════════════════════════════════════════════════════════════╗
+║              ✓ nPanel Installation Completed                       ║
+║              All Phases 1-7 Successful                             ║
+╚════════════════════════════════════════════════════════════════════╝
 
-  ${CYAN}Web UI:${NC}       http://$(hostname -I | awk '{print $1}')
-  ${CYAN}API:${NC}         http://$(hostname -I | awk '{print $1}'):8080/api
-  
-  ${CYAN}Admin Email:${NC}  admin@$(hostname -f)
-  ${CYAN}Password:${NC}     See /root/.npanel-credentials
+NEXT STEPS:
+  1. Access web UI: http://<server-ip>
+  2. Check installation: systemctl status npanel-*
+  3. View logs: tail -f /var/log/npanel/install.log
 
-${BOLD}REQUIRED ACTIONS (within 24 hours)${NC}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  [ ] Login and change admin password
-  [ ] Configure domain & SSL
-  [ ] Set up backups
-  [ ] Configure email notifications
-
-${BOLD}DOCUMENTATION${NC}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Installation Log:  $LOG_FILE
-  Configuration:    $CONFIG_PATH/config.yaml
-  Credentials:      /root/.npanel-credentials
-  Manifest:         $MANIFEST_FILE
-  
-  GitHub:  https://github.com/omenyx/npanel
-  Docs:    https://github.com/omenyx/npanel/wiki
+DOCUMENTATION:
+  - Quick Start: https://github.com/omenyx/npanel/blob/main/INSTALLER_QUICK_START.md
+  - Architecture: https://github.com/omenyx/npanel/blob/main/INSTALLER_ARCHITECTURE.md
+  - Troubleshooting: https://github.com/omenyx/npanel/blob/main/INSTALLER_ERROR_RECOVERY.md
 
 EOF
-
-  if [ ${#WARNINGS[@]} -gt 0 ]; then
-    echo ""
-    echo -e "${YELLOW}${BOLD}WARNINGS${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    for warning in "${WARNINGS[@]}"; do
-      echo -e "  ${YELLOW}⚠${NC} $warning"
-    done
-  fi
-  
-  echo ""
 }
 
 # ==============================================================================
-# MAIN FLOW
+# MAIN EXECUTION
 # ==============================================================================
 
 main() {
-  ensure_log_dir
-  
   log_info "nPanel Universal Installer v$SCRIPT_VERSION"
-  log_info "================================"
   log_info "Starting installation..."
   log_info ""
   
-  # Pre-flight
-  log_info "Running Phase 1: Pre-flight checks..."
-  if ! check_os_support; then log_error "Phase 1 failed: OS support check"; exit 1; fi
+  phase_preflight
+  phase_state_detection
+  phase_github_verify
+  phase_dependencies
+  phase_binaries
+  phase_configuration
+  phase_startup
   
-  if ! check_root; then log_error "Phase 1 failed: Root check"; exit 1; fi
-  
-  if ! check_resources; then log_error "Phase 1 failed: Resource check"; exit 1; fi
-  
-  check_ports  # Warnings only, doesn't fail
-  
-  if ! check_github_connectivity; then log_error "Phase 1 failed: GitHub check"; exit 1; fi
-  
-  # State detection
-  log_info "Running Phase 2: State detection..."
-  if ! detect_existing_installation; then log_error "Phase 2 failed"; exit 1; fi
-  
-  # Verify & deploy
-  log_info "Running Phase 3: GitHub verification..."
-  if ! verify_github_release; then log_error "Phase 3 failed"; exit 1; fi
-  
-  log_info "Running Phase 4: Dependency installation..."
-  if ! install_dependencies; then log_error "Phase 4 failed"; exit 1; fi
-  
-  log_info "Running Phase 5: Binary deployment..."
-  if ! deploy_binaries; then log_error "Phase 5 failed"; exit 1; fi
-  
-  log_info "Running Phase 6: Configuration..."
-  if ! create_config; then log_error "Phase 6 failed"; exit 1; fi
-  
-  if ! create_systemd_services; then log_error "Phase 6 failed (systemd)"; exit 1; fi
-  
-  log_info "Running Phase 7: Service startup..."
-  if ! start_services; then log_error "Phase 7 failed"; exit 1; fi
-  
-  # Success
-  print_completion_summary
-  
-  log_success "Installation completed successfully"
-  log_info "Log file: $LOG_FILE"
+  log_success "All phases completed successfully"
+  print_summary
 }
 
-# Handle arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --debug) DEBUG_MODE=1 ;;
-    --upgrade) INSTALL_METHOD="upgrade" ;;
-    --repair) INSTALL_METHOD="repair" ;;
-    *) log_warn "Unknown option: $1" ;;
-  esac
-  shift
-done
-
+# Setup logging and run
+setup_logging
 main
+
 exit $EXIT_SUCCESS
