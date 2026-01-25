@@ -71,6 +71,8 @@ export default function LoginPage() {
       }
       
       const targetPath = getDashboardPath(data.user.role);
+      // Wait a tick to ensure localStorage is synced before navigation
+      await new Promise(resolve => setTimeout(resolve, 10));
       router.replace(targetPath);
     } catch {
       setError("Unable to reach backend API");

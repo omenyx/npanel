@@ -12,6 +12,7 @@ import {
   getImpersonationContext,
   getStoredRole,
   isImpersonating,
+  type ImpersonationContext,
 } from "@/shared/auth/session";
 
 type PanelLayoutProps = {
@@ -31,9 +32,14 @@ export function PanelLayout({
   const [authorized, setAuthorized] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
-  const [impersonation, setImpersonation] = React.useState(
-    getImpersonationContext(),
+  const [impersonation, setImpersonation] = React.useState<ImpersonationContext | null>(
+    null,
   );
+
+  React.useEffect(() => {
+    // Initialize impersonation context after hydration
+    setImpersonation(getImpersonationContext());
+  }, []);
 
   React.useEffect(() => {
     if (allowedRoles && allowedRoles.length > 0) {
@@ -46,6 +52,18 @@ export function PanelLayout({
     }
     setAuthorized(true);
   }, [allowedRoles, router]);
+  
+  // Fallback: if not authorized after 2 seconds, redirect to login
+  React.useEffect(() => {
+    if (!authorized) {
+      const timer = setTimeout(() => {
+        if (!authorized) {
+          router.replace("/login");
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [authorized, router]);
 
   const handleLogout = React.useCallback(() => {
     clearSession();

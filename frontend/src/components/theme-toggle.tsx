@@ -12,16 +12,16 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
-  if (!mounted) {
-    return <div className="w-8 h-8" />;
-  }
-
   return (
-    <div className="flex items-center bg-surface border border-border rounded-full p-1">
+    <div 
+      className="flex items-center bg-surface border border-border rounded-full p-1"
+      suppressHydrationWarning
+    >
         <button
             onClick={() => setTheme("light")}
             className={`p-1.5 rounded-full transition-colors ${theme === 'light' ? 'bg-background shadow-sm text-primary' : 'text-text-muted hover:text-text-main'}`}
             title="Light Mode"
+            disabled={!mounted}
         >
             <Sun className="h-4 w-4" />
         </button>
@@ -29,6 +29,7 @@ export function ThemeToggle() {
             onClick={() => setTheme("system")}
             className={`p-1.5 rounded-full transition-colors ${theme === 'system' ? 'bg-background shadow-sm text-primary' : 'text-text-muted hover:text-text-main'}`}
             title="System"
+            disabled={!mounted}
         >
             <Monitor className="h-4 w-4" />
         </button>
@@ -36,6 +37,7 @@ export function ThemeToggle() {
             onClick={() => setTheme("dark")}
             className={`p-1.5 rounded-full transition-colors ${theme === 'dark' ? 'bg-background shadow-sm text-primary' : 'text-text-muted hover:text-text-main'}`}
             title="Dark Mode"
+            disabled={!mounted}
         >
             <Moon className="h-4 w-4" />
         </button>
