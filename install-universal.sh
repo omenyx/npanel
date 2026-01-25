@@ -260,7 +260,13 @@ phase_dependencies() {
         mv go /usr/local/
         cd - > /dev/null
         rm -rf /tmp/go-install
-        export PATH="/usr/local/go/bin:$PATH"
+        # Persist Go path for all shell sessions
+        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
+        chmod +x /etc/profile.d/go-path.sh
+        source /etc/profile.d/go-path.shons
+        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
+        chmod +x /etc/profile.d/go-path.sh
+        source /etc/profile.d/go-path.sh
       fi
       log_success "Go installed"
       
@@ -291,6 +297,12 @@ phase_dependencies() {
 
 phase_binaries() {
   log_info "PHASE 5/7: BINARY BUILD & DEPLOYMENT"
+  
+  # Ensure Go is in PATH for build phase
+  if [ -f /etc/profile.d/go-path.sh ]; then
+    source /etc/profile.d/go-path.sh
+  fi
+  export PATH="/usr/local/go/bin:$PATH"
   
   local staging_dir="/tmp/npanel-staging-$$"
   local bin_dir="$INSTALL_PATH/bin"
