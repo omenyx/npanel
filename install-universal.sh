@@ -220,17 +220,50 @@ phase_dependencies() {
         mkdir -p /tmp/go-install
         cd /tmp/go-install
         
-        if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
-          log_error "Failed to download Go"
+        local go_url="https://go.dev/dl/go1.23.linux-amd64.tar.gz"
+        log_info "Download URL: $go_url"
+        
+        # Try wget with verbose output first
+        if ! wget --timeout=30 "$go_url" 2>&1 | tee -a "$LOG_FILE"; then
+          log_warn "wget failed, trying curl..."
+          if ! curl -L --max-time 30 "$go_url" -o go1.23.linux-amd64.tar.gz 2>&1 | tee -a "$LOG_FILE"; then
+            log_error "Failed to download Go with both wget and curl"
+            log_error "Check network connectivity and firewall"
+            cd - > /dev/null
+            rm -rf /tmp/go-install
+            exit 1
+          fi
+        fi
+        
+        # Verify download
+        if [ ! -f go1.23.linux-amd64.tar.gz ]; then
+          log_error "Go tarball not found after download"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
           exit 1
         fi
         
-        tar -xzf go1.23.linux-amd64.tar.gz
+        log_info "Extracting Go..."
+        tar -xzf go1.23.linux-amd64.tar.gz || {
+          log_error "Failed to extract Go tarball"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
+          exit 1
+        }
+        
+        log_info "Installing Go to /usr/local..."
         rm -rf /usr/local/go
-        mv go /usr/local/
+        mv go /usr/local/ || {
+          log_error "Failed to move Go to /usr/local"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
+          exit 1
+        }
+        
         cd - > /dev/null
         rm -rf /tmp/go-install
         
+        log_info "Configuring Go environment..."
         # Ensure Go is in PATH permanently
         echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
         chmod +x /etc/profile.d/go-path.sh
@@ -242,6 +275,7 @@ phase_dependencies() {
         fi
         
         # Verify installation
+        log_info "Verifying Go installation..."
         if ! /usr/local/go/bin/go version &> /dev/null; then
           log_error "Go installation failed - binary doesn't work"
           exit 1
@@ -292,17 +326,50 @@ phase_dependencies() {
         mkdir -p /tmp/go-install
         cd /tmp/go-install
         
-        if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
-          log_error "Failed to download Go"
+        local go_url="https://go.dev/dl/go1.23.linux-amd64.tar.gz"
+        log_info "Download URL: $go_url"
+        
+        # Try wget with verbose output first
+        if ! wget --timeout=30 "$go_url" 2>&1 | tee -a "$LOG_FILE"; then
+          log_warn "wget failed, trying curl..."
+          if ! curl -L --max-time 30 "$go_url" -o go1.23.linux-amd64.tar.gz 2>&1 | tee -a "$LOG_FILE"; then
+            log_error "Failed to download Go with both wget and curl"
+            log_error "Check network connectivity and firewall"
+            cd - > /dev/null
+            rm -rf /tmp/go-install
+            exit 1
+          fi
+        fi
+        
+        # Verify download
+        if [ ! -f go1.23.linux-amd64.tar.gz ]; then
+          log_error "Go tarball not found after download"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
           exit 1
         fi
         
-        tar -xzf go1.23.linux-amd64.tar.gz
+        log_info "Extracting Go..."
+        tar -xzf go1.23.linux-amd64.tar.gz || {
+          log_error "Failed to extract Go tarball"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
+          exit 1
+        }
+        
+        log_info "Installing Go to /usr/local..."
         rm -rf /usr/local/go
-        mv go /usr/local/
+        mv go /usr/local/ || {
+          log_error "Failed to move Go to /usr/local"
+          cd - > /dev/null
+          rm -rf /tmp/go-install
+          exit 1
+        }
+        
         cd - > /dev/null
         rm -rf /tmp/go-install
         
+        log_info "Configuring Go environment..."
         # Ensure Go is in PATH permanently
         echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
         chmod +x /etc/profile.d/go-path.sh
@@ -314,6 +381,7 @@ phase_dependencies() {
         fi
         
         # Verify installation
+        log_info "Verifying Go installation..."
         if ! /usr/local/go/bin/go version &> /dev/null; then
           log_error "Go installation failed - binary doesn't work"
           exit 1
