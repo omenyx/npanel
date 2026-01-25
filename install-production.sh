@@ -30,29 +30,60 @@ NC='\033[0m'
 
 # ==================== ERROR HANDLING ====================
 
+# Global variables to track errors
+LAST_COMPONENT=""
+LAST_ACTION=""
+
 # Trap unexpected errors
 trap 'handle_error $? $LINENO' ERR
 
 handle_error() {
     local exit_code=$1
     local line_number=$2
+    local command="${BASH_COMMAND}"
     
     echo ""
     error "Unexpected error occurred!"
     log "  Exit code: $exit_code"
     log "  Line number: $line_number"
-    log "  Command: ${BASH_COMMAND}"
+    
+    # Provide better context based on exit code
+    if [ "$exit_code" -eq 127 ]; then
+        log "  Error: Command not found"
+        if [ -n "$LAST_COMPONENT" ]; then
+            log "  During: $LAST_COMPONENT"
+        fi
+        if [ -n "$LAST_ACTION" ]; then
+            log "  Action: $LAST_ACTION"
+        fi
+    elif [ "$exit_code" -eq 1 ]; then
+        log "  Error: General error (exit code 1)"
+        if [ -n "$LAST_COMPONENT" ]; then
+            log "  During: $LAST_COMPONENT"
+        fi
+    fi
+    
+    # Only show BASH_COMMAND if it looks reasonable (not ASCII art)
+    if [ ${#command} -lt 200 ] && ! echo "$command" | grep -q "^[█╗╔═]"; then
+        log "  Last command: $command"
+    fi
+    
     log ""
     log "Installation logs saved to: $LOG_FILE"
     log ""
     log "To troubleshoot:"
     log "  1. Check the full log file:"
-    log "     tail -100 $LOG_FILE"
-    log "  2. Run diagnostics:"
-    log "     sh ${INSTALL_PATH}/scripts/check_prerequisites.sh"
-    log "  3. Check system resources:"
-    log "     free -h && df -h /opt"
-    log "  4. Create issue at: https://github.com/omenyx/npanel/issues"
+    log "     tail -150 $LOG_FILE"
+    log "  2. Check the tail of last commands:"
+    log "     grep 'Starting\\|Installing\\|Setting up' $LOG_FILE | tail -20"
+    log "  3. Run diagnostics:"
+    log "     sh ${INSTALL_PATH}/scripts/check_prerequisites.sh 2>&1 | tee ~/npanel-prereq.log"
+    log "  4. Check system resources:"
+    log "     free -h && df -h /opt && df -i /opt"
+    log "  5. Check apt cache if package error:"
+    log "     apt-cache policy <package-name>"
+    log "  6. Create issue at: https://github.com/omenyx/npanel/issues"
+    log "     Include: tail of $LOG_FILE and ~/npanel-prereq.log"
     log ""
     
     CRITICAL_FAILURE=1
@@ -67,6 +98,7 @@ cleanup_on_error() {
     # Stop any services that were started
     for service in npanel-agent npanel-api npanel-watchdog; do
         if systemctl is-active --quiet "$service" 2>/dev/null; then
+            log "  Stopping: $service"
             systemctl stop "$service" 2>/dev/null || true
         fi
     done
@@ -77,6 +109,13 @@ cleanup_on_error() {
     log "The installer was interrupted due to errors."
     log "Partial installation was preserved for debugging."
     log "Review logs above for details on what failed."
+}
+
+# Track current operation for better error context
+set_current_operation() {
+    LAST_COMPONENT="$1"
+    LAST_ACTION="$2"
+    log "Starting: $1"
 }
 
 # ==================== LOGGING ====================
