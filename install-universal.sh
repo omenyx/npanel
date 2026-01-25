@@ -192,25 +192,93 @@ phase_dependencies() {
         exit 1
       }
       
-      log_info "Installing packages (this may take a few minutes)..."
+      log_info "Installing system packages..."
       apt-get install -y -qq \
         curl wget git build-essential \
         nginx sqlite3 certbot \
         2>&1 | tee -a "$LOG_FILE" || {
-        log_error "Failed to install dependencies"
+        log_error "Failed to install system dependencies"
         exit 1
       }
+      
+      # Install Go
+      log_info "Installing Go 1.23..."
+      if ! command -v go &> /dev/null || [ "$(go version | awk '{print $3}')" != "go1.23" ]; then
+        if ! apt-get install -y -qq golang-1.23 2>&1 | tee -a "$LOG_FILE"; then
+          log_warn "Go 1.23 from apt failed, installing from official source..."
+          mkdir -p /tmp/go-install
+          cd /tmp/go-install
+          if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
+            log_error "Failed to download Go"
+            exit 1
+          fi
+          tar -xzf go1.23.linux-amd64.tar.gz
+          rm -rf /usr/local/go
+          mv go /usr/local/
+          cd - > /dev/null
+          rm -rf /tmp/go-install
+        fi
+        export PATH="/usr/local/go/bin:$PATH"
+      fi
+      log_success "Go installed"
+      
+      # Install Node.js
+      log_info "Installing Node.js 20..."
+      if ! command -v node &> /dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >> "$LOG_FILE" 2>&1
+        apt-get install -y -qq nodejs 2>&1 | tee -a "$LOG_FILE" || {
+          log_error "Failed to install Node.js"
+          exit 1
+        }
+      fi
+      log_success "Node.js installed"
       ;;
+      
     rocky|almalinux)
-      log_info "Installing packages..."
+      log_info "Installing system packages..."
       dnf install -y \
         curl wget git \
         nginx sqlite \
         certbot \
         2>&1 | tee -a "$LOG_FILE" || {
-        log_error "Failed to install dependencies"
+        log_error "Failed to install system dependencies"
         exit 1
       }
+      
+      # Install Go
+      log_info "Installing Go 1.23..."
+      if ! command -v go &> /dev/null || [ "$(go version | awk '{print $3}')" != "go1.23" ]; then
+        log_info "Downloading Go 1.23..."
+        mkdir -p /tmp/go-install
+        cd /tmp/go-install
+        if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
+          log_error "Failed to download Go"
+          exit 1
+        fi
+        tar -xzf go1.23.linux-amd64.tar.gz
+        rm -rf /usr/local/go
+        mv go /usr/local/
+        cd - > /dev/null
+        rm -rf /tmp/go-install
+        export PATH="/usr/local/go/bin:$PATH"
+      fi
+      log_success "Go installed"
+      
+      # Install Node.js
+      log_info "Installing Node.js 20..."
+      if ! command -v node &> /dev/null; then
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >> "$LOG_FILE" 2>&1
+        dnf install -y nodejs 2>&1 | tee -a "$LOG_FILE" || {
+          log_error "Failed to install Node.js"
+          exit 1
+        }
+      fi
+      log_success "Node.js installed"
+      ;;
+      
+    *)
+      log_error "Unsupported distro: $distro"
+      exit "$EXIT_UNSUPPORTED_OS"
       ;;
   esac
   
