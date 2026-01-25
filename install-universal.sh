@@ -318,55 +318,39 @@ phase_binaries() {
   if [ -d "$source_dir/backend" ] && [ -f "$source_dir/backend/main.go" ]; then
     cd "$source_dir/backend" || exit 1
     
-    # Set Go module environment with verbose output
+    # Set Go module environment - use vendor mode to avoid network issues
     export GO111MODULE=on
-    export GOPROXY=https://proxy.golang.org,direct
-    
-    # Configure git credentials for GitHub access
-    log_info "Configuring git credentials..."
-    git config --global credential.helper store 2>&1 || true
-    
-    # If GITHUB_TOKEN is set in environment, use it for authentication
-    if [ -n "${GITHUB_TOKEN:-}" ]; then
-      git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/" || true
-      log_info "Using GitHub token for authentication"
-    fi
+    export GOFLAGS="-mod=vendor"
     
     log_info "Working directory: $(pwd)"
-    log_info "Downloading Go modules (this may take 2-3 minutes)..."
+    log_info "Preparing Go modules..."
     
-    # First, ensure go.sum exists (may be missing from repo)
-    log_info "Tidying Go modules..."
-    if ! go mod tidy >> "$LOG_FILE" 2>&1; then
-      log_warn "go mod tidy had issues (may be non-fatal)"
-    fi
-    
-    # Try go mod download first (use whatever go is available)
-    if go mod download 2>&1 | tee -a "$LOG_FILE"; then
-      log_success "Go modules downloaded successfully"
-    else
-      log_warn "go mod download failed, attempting go mod vendor fallback..."
+    # Attempt to create vendor directory if it doesn't exist
+    # This is non-fatal if it fails (go.sum may already be present from repo)
+    if ! go mod vendor >> "$LOG_FILE" 2>&1; then
+      log_warn "go mod vendor encountered issues (checking if already vendored)..."
       
-      # Fallback: use vendor directory
-      if ! go mod vendor >> "$LOG_FILE" 2>&1; then
-        log_error "Both go mod download and go mod vendor failed"
+      # Check if vendor directory exists
+      if [ ! -d "vendor" ]; then
+        log_error "Vendor directory not found and could not be created"
         log_error "Last 30 lines of build log:"
         tail -30 "$LOG_FILE" | sed 's/^/  /'
         log_info ""
         log_info "TROUBLESHOOTING:"
-        log_info "  1. Check GitHub connectivity: curl -I https://github.com"
-        log_info "  2. If using private repos, set GITHUB_TOKEN environment variable"
-        log_info "  3. Or configure SSH keys: ssh -T git@github.com"
-        log_info "  4. Run again with: GITHUB_TOKEN=your_token bash install-universal.sh"
+        log_info "  1. Ensure go.sum file exists in backend/"
+        log_info "  2. Check network connectivity to GitHub: curl -I https://github.com"
+        log_info "  3. If network is blocked, ensure vendor/ directory is committed to repo"
         cd - > /dev/null || exit 1
         rm -rf "$staging_dir"
         exit "$EXIT_UNRECOVERABLE"
       fi
-      log_success "Go modules vendored successfully"
+      log_info "Proceeding with existing vendor directory"
+    else
+      log_success "Vendor directory prepared"
     fi
     
     log_info "Building binary..."
-    if ! go build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
+    if ! go build -mod=vendor -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build backend API"
       cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
