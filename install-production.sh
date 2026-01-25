@@ -14,6 +14,10 @@ LOG_FILE="/var/log/npanel-install.log"
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 SERVER_HOSTNAME=""
+INSTALL_START_TIME=$(date +%s)
+FAILED_COMPONENTS=()
+SKIPPED_COMPONENTS=()
+CRITICAL_FAILURE=0
 
 # ==================== COLORS ====================
 RED='\033[0;31m'
@@ -23,6 +27,57 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
+
+# ==================== ERROR HANDLING ====================
+
+# Trap unexpected errors
+trap 'handle_error $? $LINENO' ERR
+
+handle_error() {
+    local exit_code=$1
+    local line_number=$2
+    
+    echo ""
+    error "Unexpected error occurred!"
+    log "  Exit code: $exit_code"
+    log "  Line number: $line_number"
+    log "  Command: ${BASH_COMMAND}"
+    log ""
+    log "Installation logs saved to: $LOG_FILE"
+    log ""
+    log "To troubleshoot:"
+    log "  1. Check the full log file:"
+    log "     tail -100 $LOG_FILE"
+    log "  2. Run diagnostics:"
+    log "     sh ${INSTALL_PATH}/scripts/check_prerequisites.sh"
+    log "  3. Check system resources:"
+    log "     free -h && df -h /opt"
+    log "  4. Create issue at: https://github.com/omenyx/npanel/issues"
+    log ""
+    
+    CRITICAL_FAILURE=1
+    cleanup_on_error
+    
+    exit "$exit_code"
+}
+
+cleanup_on_error() {
+    log "Performing cleanup..."
+    
+    # Stop any services that were started
+    for service in npanel-agent npanel-api npanel-watchdog; do
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            systemctl stop "$service" 2>/dev/null || true
+        fi
+    done
+    
+    log "Cleanup completed"
+    log ""
+    log "${YELLOW}INSTALLATION INCOMPLETE${NC}"
+    log "The installer was interrupted due to errors."
+    log "Partial installation was preserved for debugging."
+    log "Review logs above for details on what failed."
+}
 
 # ==================== LOGGING ====================
 
@@ -42,12 +97,61 @@ warning() {
     echo -e "${YELLOW}⚠${NC} $1" | tee -a "$LOG_FILE"
 }
 
+# ==================== COMPONENT TRACKING ====================
+
+track_failure() {
+    local component=$1
+    local reason=$2
+    
+    FAILED_COMPONENTS+=("$component: $reason")
+    error "Component failed: $component - $reason"
+}
+
+track_skip() {
+    local component=$1
+    local reason=$2
+    
+    SKIPPED_COMPONENTS+=("$component: $reason")
+    warning "Component skipped: $component - $reason"
+}
+
+check_previous_errors() {
+    if [ ${#FAILED_COMPONENTS[@]} -gt 0 ]; then
+        log ""
+        log "${YELLOW}Note: Some components failed during setup:${NC}"
+        for component in "${FAILED_COMPONENTS[@]}"; do
+            log "  - $component"
+        done
+        return 1
+    fi
+    return 0
+}
+
 # ==================== HEADER ====================
 
 clear
 cat << "EOF"
 
 ███╗   ██╗██████╗  █████╗ ███╗   ██╗███████╗██╗     
+████╗  ██║██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     
+██╔██╗ ██║██████╔╝███████║██╔██╗ ██║█████╗  ██║     
+██║╚██╗██║██╔═══╝ ██╔══██║██║╚██╗██║██╔══╝  ██║     
+██║ ╚████║██║     ██║  ██║██║ ╚████║███████╗███████╗
+╚═╝  ╚═══╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
+                                                      
+    Professional Hosting Control Panel
+    Complete Production Deployment
+    Phases 1-5 (All Features Included)
+
+EOF
+
+echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}nPanel Production Installer - Enterprise Ready${NC}"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+echo ""
+echo "Installation started at: $(date)"
+echo "Log file: $LOG_FILE"
+echo ""
 ████╗  ██║██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     
 ██╔██╗ ██║██████╔╝███████║██╔██╗ ██║█████╗  ██║     
 ██║╚██╗██║██╔═══╝ ██╔══██║██║╚██╗██║██╔══╝  ██║     
@@ -1167,6 +1271,30 @@ ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━�
     https://github.com/omenyx/npanel/issues
 
 ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}INSTALLATION SUMMARY & DIAGNOSTICS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+EOF
+
+    if [ ${#FAILED_COMPONENTS[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Failed Components:${NC}"
+        for component in "${FAILED_COMPONENTS[@]}"; do
+            echo "  - $component"
+        done
+        echo ""
+    fi
+    
+    if [ ${#SKIPPED_COMPONENTS[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Skipped/Optional Components:${NC}"
+        for component in "${SKIPPED_COMPONENTS[@]}"; do
+            echo "  - $component"
+        done
+        echo ""
+    fi
+
+    cat << EOF
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}SYSTEM INFORMATION${NC}
 ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
@@ -1175,11 +1303,45 @@ ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━�
   ${CYAN}OS:${NC}               $OS_ID ($(. /etc/os-release; echo $VERSION_ID))
   ${CYAN}Installation Time:${NC} $(date)
   ${CYAN}Total Setup Duration:${NC} $SECONDS seconds
+  ${CYAN}Installation Log:${NC}  $LOG_FILE
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}IF EXPERIENCING ISSUES${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${CYAN}Collect diagnostic information:${NC}
+  1. Full installation log:
+     cat $LOG_FILE > ~/npanel-install-$(date +%s).log
+
+  2. System resources:
+     free -h
+     df -h /opt
+     uname -a
+
+  3. Service status:
+     systemctl status npanel-* | tee ~/npanel-services.txt
+     journalctl -u npanel-api -n 50 | tee ~/npanel-api-logs.txt
+
+  4. Package versions:
+     go version
+     node --version
+     npm --version
+
+  5. Create issue with:
+     https://github.com/omenyx/npanel/issues/new
+     Include the log files above and describe the error
 
 ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
-${GREEN}${BOLD}✓ nPanel is ready for production use!${NC}
-${BOLD}Access your panel now at: ${CYAN}http://$(hostname -I | awk '{print $1}')${NC}${NC}
+EOF
+
+    if [ $CRITICAL_FAILURE -eq 0 ]; then
+        echo -e "${GREEN}${BOLD}✓ nPanel is ready for production use!${NC}"
+        echo -e "${BOLD}Access your panel now at: ${CYAN}http://$(hostname -I | awk '{print $1}')${NC}${NC}"
+    else
+        echo -e "${RED}${BOLD}✗ Installation did not complete successfully${NC}"
+        echo -e "${BOLD}Review errors above and check: $LOG_FILE${NC}"
+    fi
 
 EOF
 }
@@ -1188,6 +1350,9 @@ EOF
 
 main() {
     echo "Starting nPanel production installation..." | tee -a "$LOG_FILE"
+    log "Installation log: $LOG_FILE"
+    log "Process ID: $$"
+    log ""
     
     check_root
     check_os
