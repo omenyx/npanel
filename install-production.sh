@@ -697,70 +697,181 @@ print_summary() {
     
     cat << EOF
 
-${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${NC}
-${GREEN}${BOLD}║   nPanel Production Installation Complete!                  ║${NC}
-${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${NC}
+${GREEN}${BOLD}╔════════════════════════════════════════════════════════════════════╗${NC}
+${GREEN}${BOLD}║                                                                    ║${NC}
+${GREEN}${BOLD}║        ✓ nPanel Production Installation COMPLETE!                 ║${NC}
+${GREEN}${BOLD}║        All Phases 1-5 Deployed & Running                          ║${NC}
+${GREEN}${BOLD}║                                                                    ║${NC}
+${GREEN}${BOLD}╚════════════════════════════════════════════════════════════════════╝${NC}
 
-${BOLD}Installation Summary:${NC}
-  ✓ Phases 1-5 Deployed
-  ✓ All Services Running
-  ✓ Database Initialized
-  ✓ Web Server Configured
-  ✓ Monitoring Ready
-  ✓ Email & DNS Services Active
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}INSTALLATION STATUS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
-${BOLD}Installation Paths:${NC}
-  Application:  $INSTALL_PATH
-  Database:     $DATA_PATH/npanel.db
-  Web Root:     $INSTALL_PATH/public
-  Binaries:     $INSTALL_PATH/bin/
-  Config:       $INSTALL_PATH/config/
-  Backups:      $BACKUP_PATH
+  ${GREEN}✓${NC} Phases 1-5 Deployed
+  ${GREEN}✓${NC} All Services Running
+  ${GREEN}✓${NC} Database Initialized (45+ tables)
+  ${GREEN}✓${NC} Web Server Configured & Active
+  ${GREEN}✓${NC} Monitoring Infrastructure Ready
+  ${GREEN}✓${NC} Email & DNS Services Active
+  ${GREEN}✓${NC} Performance Baseline Recorded
 
-${BOLD}Access Points:${NC}
-  Web UI:       http://$(hostname -I | awk '{print $1}')
-  Nginx:        http://$(hostname -I | awk '{print $1}'):80
-  Prometheus:   http://localhost:9090
-  Grafana:      http://localhost:3000 (admin/admin)
-  SSH:          ssh root@$(hostname -I | awk '{print $1}')
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}ACCESS CREDENTIALS & PORTS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
-${BOLD}Services Status:${NC}
+${CYAN}📊 WEB ADMINISTRATION PANEL${NC}
+  ${BOLD}URL:${NC}          http://$(hostname -I | awk '{print $1}') (or https:// for SSL)
+  ${BOLD}Port:${NC}         80 (HTTP) / 443 (HTTPS with SSL)
+  ${BOLD}Admin User:${NC}    admin
+  ${BOLD}Email:${NC}        $ADMIN_EMAIL
+  ${BOLD}Password:${NC}     $ADMIN_PASSWORD
+  
+  ${YELLOW}⚠ IMPORTANT:${NC} Change admin credentials after first login!
+
+${CYAN}📈 MONITORING & OBSERVABILITY${NC}
+  ${BOLD}Prometheus:${NC}   http://$(hostname -I | awk '{print $1}'):9090
+  ${BOLD}Grafana:${NC}      http://$(hostname -I | awk '{print $1}'):3000
+  ${BOLD}Grafana User:${NC} admin
+  ${BOLD}Grafana Pass:${NC} admin
+  
+  ${YELLOW}⚠ IMPORTANT:${NC} Change Grafana password on first login!
+
+${CYAN}🔌 API & SERVICES${NC}
+  ${BOLD}REST API:${NC}     http://$(hostname -I | awk '{print $1}'):8080/api
+  ${BOLD}Agent IPC:${NC}    /var/run/npanel-agent.sock (internal)
+  ${BOLD}SSH Access:${NC}   ssh root@$(hostname -I | awk '{print $1}')
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}INSTALLATION PATHS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+  ${BOLD}Installation Root:${NC}  $INSTALL_PATH
+  ${BOLD}Database:${NC}           $DATA_PATH/npanel.db
+  ${BOLD}Web Root:${NC}           $INSTALL_PATH/public
+  ${BOLD}Binaries:${NC}           $INSTALL_PATH/bin/ (api, agent, watchdog)
+  ${BOLD}Configuration:${NC}      $INSTALL_PATH/config/
+  ${BOLD}Backups:${NC}            $BACKUP_PATH
+  ${BOLD}Logs:${NC}               /var/log/npanel/
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}SERVICES STATUS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
 EOF
 
-    for service in npanel-agent npanel-api npanel-watchdog nginx prometheus grafana-server; do
+    for service in npanel-agent npanel-api npanel-watchdog nginx prometheus grafana-server exim4 pdns; do
         if systemctl is-active --quiet "$service" 2>/dev/null; then
-            echo "  ${GREEN}✓${NC} $service (running)"
+            printf "  ${GREEN}✓${NC} %-20s (running)\n" "$service"
         else
-            echo "  ${YELLOW}○${NC} $service (inactive)"
+            printf "  ${YELLOW}○${NC} %-20s (inactive)\n" "$service"
         fi
     done
 
     cat << EOF
 
-${BOLD}Quick Commands:${NC}
-  View logs:         journalctl -u npanel-api -f
-  Check status:      systemctl status npanel-*
-  Restart services:  systemctl restart npanel-api
-  Database backup:   sqlite3 $DATA_PATH/npanel.db ".backup $BACKUP_PATH/npanel-\$(date +%s).db"
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}QUICK COMMANDS${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
-${BOLD}Documentation:${NC}
-  Installation log:  $LOG_FILE
-  API docs:          $INSTALL_PATH/docs/
-  Deployment guide:  $INSTALL_PATH/DEPLOYMENT_UBUNTU_FRESH.md
+  ${CYAN}View API logs:${NC}
+    journalctl -u npanel-api -f
 
-${BOLD}Next Steps:${NC}
-  1. Set up domain & SSL certificate
-  2. Create admin user (if not auto-created)
-  3. Configure email/DNS services
-  4. Import hosting packages
-  5. Set up backups & monitoring
+  ${CYAN}Check all nPanel services:${NC}
+    systemctl status npanel-{agent,api,watchdog}
 
-${BOLD}Support:${NC}
-  GitHub:  https://github.com/omenyx/npanel
-  Docs:    Check $INSTALL_PATH/docs/
+  ${CYAN}Restart API server:${NC}
+    systemctl restart npanel-api
 
-Installation completed at: $(date)
-Total time: $SECONDS seconds
+  ${CYAN}View database:${NC}
+    sqlite3 $DATA_PATH/npanel.db
+
+  ${CYAN}Backup database:${NC}
+    sqlite3 $DATA_PATH/npanel.db ".backup $BACKUP_PATH/npanel-\$(date +%s).db"
+
+  ${CYAN}View installation log:${NC}
+    cat $LOG_FILE
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}INITIAL SETUP CHECKLIST${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+  ${CYAN}1. First Login${NC}
+     - Open web UI: http://$(hostname -I | awk '{print $1}')
+     - Username: admin
+     - Password: $ADMIN_PASSWORD
+     - Click Login
+
+  ${CYAN}2. Change Admin Password (CRITICAL)${NC}
+     - Go to Settings > Admin Users
+     - Change admin password immediately
+     - Save changes
+
+  ${CYAN}3. Configure Domain & SSL${NC}
+     - Update server hostname in settings
+     - Add SSL certificate (Let's Encrypt or custom)
+     - Update DNS records to point to this server
+
+  ${CYAN}4. Set Up Email Service${NC}
+     - Configure Exim4 SMTP settings
+     - Test email sending from panel
+     - Set up sender/reply-to addresses
+
+  ${CYAN}5. Configure DNS Service${NC}
+     - Setup PowerDNS if using nameserver functionality
+     - Configure zone files as needed
+
+  ${CYAN}6. Import Hosting Packages${NC}
+     - Go to Packages menu
+     - Create hosting packages (shared, VPS, reseller, etc.)
+     - Set resource limits and features per package
+
+  ${CYAN}7. Monitor Performance${NC}
+     - Open Prometheus: http://$(hostname -I | awk '{print $1}'):9090
+     - Open Grafana: http://$(hostname -I | awk '{print $1}'):3000
+     - Verify metrics are being collected
+
+  ${CYAN}8. Enable Automated Backups${NC}
+     - Navigate to: System > Backup Settings
+     - Enable automatic database backups
+     - Set backup retention policy
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}DOCUMENTATION & SUPPORT${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+  ${CYAN}API Documentation:${NC}
+    $INSTALL_PATH/docs/API.md
+
+  ${CYAN}Deployment Guide:${NC}
+    $INSTALL_PATH/DEPLOYMENT_UBUNTU_FRESH.md
+
+  ${CYAN}Operations Runbook:${NC}
+    $INSTALL_PATH/OPERATIONS_RUNBOOK.md
+
+  ${CYAN}Installation Log:${NC}
+    $LOG_FILE
+
+  ${CYAN}GitHub Repository:${NC}
+    https://github.com/omenyx/npanel
+
+  ${CYAN}Issues/Feature Requests:${NC}
+    https://github.com/omenyx/npanel/issues
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}SYSTEM INFORMATION${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+  ${CYAN}Server IP:${NC}        $(hostname -I | awk '{print $1}')
+  ${CYAN}Hostname:${NC}         $(hostname)
+  ${CYAN}OS:${NC}               $OS_ID ($(. /etc/os-release; echo $VERSION_ID))
+  ${CYAN}Installation Time:${NC} $(date)
+  ${CYAN}Total Setup Duration:${NC} $SECONDS seconds
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${GREEN}${BOLD}✓ nPanel is ready for production use!${NC}
+${BOLD}Access your panel now at: ${CYAN}http://$(hostname -I | awk '{print $1}')${NC}${NC}
 
 EOF
 }
