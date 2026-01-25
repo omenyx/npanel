@@ -541,6 +541,5 @@ main() {
 
 # ==================== RUN ====================
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+# Run main function (works in pipe context: curl ... | bash)
+main "$@"
