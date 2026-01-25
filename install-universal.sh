@@ -226,24 +226,36 @@ phase_binaries() {
   
   local staging_dir="/tmp/npanel-staging-$$"
   local bin_dir="$INSTALL_PATH/bin"
+  local source_dir="."
   
   # Create directories
   mkdir -p "$INSTALL_PATH" "$DATA_PATH" "$bin_dir" "$staging_dir"
   log_info "Directories created"
   
-  # Determine if building from source or downloading binaries
-  local build_from_source=false
-  
-  # Check if we're in git repo with source code
-  if [ -d ".git" ] || [ -f "backend/main.go" ]; then
-    build_from_source=true
-    log_info "Source code detected - building from source"
+  # Check if we're in the repo or need to clone
+  if [ -f "backend/main.go" ] && [ -f "frontend/package.json" ]; then
+    log_info "Source code found locally"
+    source_dir="."
+  else
+    log_info "Source code not found locally - cloning from GitHub..."
+    
+    # Clone into staging area
+    source_dir="$staging_dir/npanel-repo"
+    mkdir -p "$source_dir"
+    
+    if ! git clone --depth 1 https://github.com/omenyx/npanel.git "$source_dir" >> "$LOG_FILE" 2>&1; then
+      log_error "Failed to clone repository from GitHub"
+      rm -rf "$staging_dir"
+      exit "$EXIT_NETWORK_ERROR"
+    fi
+    log_success "Repository cloned"
   fi
   
   # BACKEND API BINARY
   log_info "Building backend API binary..."
-  if [ "$build_from_source" = true ] && [ -d "backend" ]; then
-    cd backend || exit 1
+  if [ -d "$source_dir/backend" ] && [ -f "$source_dir/backend/main.go" ]; then
+    cd "$source_dir/backend" || exit 1
+    
     if ! go mod download >> "$LOG_FILE" 2>&1; then
       log_error "Failed to download Go modules"
       rm -rf "$staging_dir"
@@ -252,28 +264,34 @@ phase_binaries() {
     
     if ! go build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build backend API"
+      cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
       exit "$EXIT_UNRECOVERABLE"
     fi
+    
     cd - > /dev/null || exit 1
     log_success "Backend API binary built"
   else
-    log_warn "Backend source not available - API not deployed"
-    log_info "To deploy API: build manually and copy to $bin_dir/"
+    log_error "Backend source code not found"
+    rm -rf "$staging_dir"
+    exit "$EXIT_UNRECOVERABLE"
   fi
   
   # FRONTEND BUILD
   log_info "Building frontend assets..."
-  if [ "$build_from_source" = true ] && [ -d "frontend" ]; then
-    cd frontend || exit 1
+  if [ -d "$source_dir/frontend" ] && [ -f "$source_dir/frontend/package.json" ]; then
+    cd "$source_dir/frontend" || exit 1
+    
     if ! npm install >> "$LOG_FILE" 2>&1; then
       log_error "Failed to install frontend dependencies"
+      cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
       exit "$EXIT_UNRECOVERABLE"
     fi
     
     if ! npm run build >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build frontend"
+      cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
       exit "$EXIT_UNRECOVERABLE"
     fi
@@ -284,18 +302,22 @@ phase_binaries() {
       cp -r dist/* "$INSTALL_PATH/public/" 2>/dev/null || true
     elif [ -d "build" ]; then
       cp -r build/* "$INSTALL_PATH/public/" 2>/dev/null || true
+    elif [ -d ".next/static" ]; then
+      cp -r .next/static "$INSTALL_PATH/public/" 2>/dev/null || true
     fi
+    
     cd - > /dev/null || exit 1
     log_success "Frontend assets built"
   else
-    log_warn "Frontend source not available - UI may not be deployed"
-    log_info "To deploy UI: build manually and copy to $INSTALL_PATH/public/"
+    log_error "Frontend source code not found"
+    rm -rf "$staging_dir"
+    exit "$EXIT_UNRECOVERABLE"
   fi
   
-  # Make binaries executable
+  # Deploy binaries
   if [ -f "$staging_dir/npanel-api" ]; then
     chmod +x "$staging_dir/npanel-api"
-    mv "$staging_dir/npanel-api" "$bin_dir/npanel-api"
+    cp "$staging_dir/npanel-api" "$bin_dir/npanel-api"
     log_success "npanel-api deployed to $bin_dir/"
   fi
   
@@ -558,7 +580,10 @@ phase_startup() {
   log_info "Verifying installation..."
   
   if [ ! -x "$INSTALL_PATH/bin/npanel-api" ]; then
-    log_warn "npanel-api binary not found - API service will not start"
+    log_error "FATAL: npanel-api binary not found at $INSTALL_PATH/bin/npanel-api"
+    log_error "Build failed - check logs: $LOG_FILE"
+    rm -rf "$staging_dir" 2>/dev/null || true
+    exit "$EXIT_UNRECOVERABLE"
   else
     log_success "npanel-api binary verified"
   fi
@@ -595,21 +620,19 @@ phase_startup() {
   log_info "Starting services..."
   
   # Start API (required)
-  if [ -x "$INSTALL_PATH/bin/npanel-api" ]; then
-    log_info "Starting npanel-api service..."
-    if systemctl start npanel-api 2>&1 | tee -a "$LOG_FILE"; then
-      sleep 2
-      if systemctl is-active --quiet npanel-api; then
-        log_success "npanel-api service started (PID: $(systemctl show -p MainPID --value npanel-api))"
-      else
-        log_error "npanel-api service failed to start"
-        systemctl status npanel-api >> "$LOG_FILE" 2>&1
-        exit 1
-      fi
+  log_info "Starting npanel-api service..."
+  if systemctl start npanel-api 2>&1 | tee -a "$LOG_FILE"; then
+    sleep 2
+    if systemctl is-active --quiet npanel-api; then
+      log_success "npanel-api service started (PID: $(systemctl show -p MainPID --value npanel-api))"
     else
-      log_error "Failed to start npanel-api"
+      log_error "npanel-api service failed to start"
+      systemctl status npanel-api >> "$LOG_FILE" 2>&1
       exit 1
     fi
+  else
+    log_error "Failed to start npanel-api"
+    exit 1
   fi
   
   # Start agent (optional but recommended)
@@ -680,6 +703,11 @@ phase_startup() {
   fi
   
   log_info "Health checks: $health_checks_passed/$health_checks_total passed"
+  
+  if [ $health_checks_passed -lt 2 ]; then
+    log_error "Installation verification failed - insufficient health checks passed"
+    exit 1
+  fi
   
   # Generate admin credentials
   local admin_email="admin@localhost"
