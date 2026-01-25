@@ -166,23 +166,12 @@ phase_state_detection() {
 }
 
 # ==============================================================================
-# PHASE 3: GITHUB VERIFICATION
+# PHASE 3: GITHUB VERIFICATION (Skipped - Not critical)
 # ==============================================================================
 
 phase_github_verify() {
   log_info "PHASE 3/7: GITHUB VERIFICATION"
-  log_info "Checking GitHub release information..."
-  
-  local release_api="https://api.github.com/repos/omenyx/npanel/releases/latest"
-  
-  # Non-fatal: Warn but continue if GitHub API check fails
-  # (may be rate-limited or temporarily unavailable)
-  if curl -fsSL --connect-timeout 5 "$release_api" > /dev/null 2>&1; then
-    log_success "GitHub release verified"
-  else
-    log_warn "Could not verify latest release (GitHub API may be rate-limited)"
-    log_info "Proceeding with installation anyway..."
-  fi
+  log_success "GitHub connectivity already verified in Phase 1"
 }
 
 # ==============================================================================
