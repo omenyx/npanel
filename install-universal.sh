@@ -361,17 +361,17 @@ set_version_matrix() {
       IPTABLES_MIN="1.8.4"; IPTABLES_MAX="1.8.4.999"
       ;;
     rocky-9|almalinux-9)
-      SYSTEMD_MIN="252"; SYSTEMD_MAX="252.999"
-      KERNEL_MIN="5.14"; KERNEL_MAX="5.14.999"
-      GLIBC_MIN="2.34"; GLIBC_MAX="2.34.999"
-      OPENSSL_MIN="3.0"; OPENSSL_MAX="3.0.999"
-      CURL_MIN="7.76"; CURL_MAX="7.76.999"
-      TAR_MIN="1.34"; TAR_MAX="1.34.999"
-      SQLITE_MIN="3.34"; SQLITE_MAX="3.34.999"
-      MARIADB_MIN="10.5"; MARIADB_MAX="10.5.999"
-      IPROUTE_MIN="5.14"; IPROUTE_MAX="5.14.999"
-      NFT_MIN="1.0.2"; NFT_MAX="1.0.2.999"
-      IPTABLES_MIN="1.8.8"; IPTABLES_MAX="1.8.8.999"
+      SYSTEMD_MIN="252"; SYSTEMD_MAX="299.999"
+      KERNEL_MIN="5.14"; KERNEL_MAX="9.999"
+      GLIBC_MIN="2.34"; GLIBC_MAX="2.99.999"
+      OPENSSL_MIN="3.0"; OPENSSL_MAX="3.999.999"
+      CURL_MIN="7.76"; CURL_MAX="9.999"
+      TAR_MIN="1.34"; TAR_MAX="2.999"
+      SQLITE_MIN="3.34"; SQLITE_MAX="3.999"
+      MARIADB_MIN="10.5"; MARIADB_MAX="11.999"
+      IPROUTE_MIN="5.14"; IPROUTE_MAX="9.999"
+      NFT_MIN="1.0.2"; NFT_MAX="2.999"
+      IPTABLES_MIN="1.8.8"; IPTABLES_MAX="2.999"
       ;;
     *)
       fail "Unsupported distro/version: $DISTRO $VERSION" "Use AlmaLinux 8/9, Rocky 8/9, Ubuntu 20.04/22.04, Debian 11/12"
