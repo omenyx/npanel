@@ -37,10 +37,10 @@ echo -e "${GREEN}✓${NC} Detected: $DISTRO $VERSION"
 # Check if supported
 case "$DISTRO" in
   ubuntu)
-    if [[ "$VERSION" =~ ^(20.04|22.04)$ ]]; then
+    if [[ "$VERSION" =~ ^(20.04|22.04|24.04)$ ]]; then
       echo -e "${GREEN}✓${NC} Ubuntu $VERSION supported"
     else
-      echo -e "${RED}✗${NC} Ubuntu version $VERSION not supported (need 20.04 or 22.04)"
+      echo -e "${RED}✗${NC} Ubuntu version $VERSION not supported (need 20.04, 22.04, or 24.04)"
       exit 2
     fi
     ;;

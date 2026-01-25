@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/install-universa
 |---|---|---|
 | AlmaLinux | 8.x, 9.x | ✅ Full Support |
 | Rocky Linux | 8.x, 9.x | ✅ Full Support |
-| Ubuntu | 20.04 LTS, 22.04 LTS | ✅ Full Support |
+| Ubuntu | 20.04 LTS, 22.04 LTS, 24.04 | ✅ Full Support |
 | Debian | 11, 12 | ✅ Full Support |
 
 **Requirements:** 2+ CPU cores, 2+ GB RAM, 10+ GB free in `/opt`

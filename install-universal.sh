@@ -171,7 +171,7 @@ check_os_support() {
   
   case "$DISTRO" in
     ubuntu)
-      if [[ ! "$DISTRO_VERSION" =~ ^(20.04|22.04)$ ]]; then
+      if [[ ! "$DISTRO_VERSION" =~ ^(20.04|22.04|24.04)$ ]]; then
         handle_unsupported_os
       fi
       PKG_MANAGER="apt-get"

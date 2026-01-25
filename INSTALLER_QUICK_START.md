@@ -19,7 +19,7 @@ sudo bash npanel-install.sh
 
 ✅ **AlmaLinux** 8.x, 9.x
 ✅ **Rocky Linux** 8.x, 9.x
-✅ **Ubuntu** 20.04 LTS, 22.04 LTS
+✅ **Ubuntu** 20.04 LTS, 22.04 LTS, 24.04
 ✅ **Debian** 11, 12
 
 ### Check Your System
