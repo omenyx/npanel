@@ -388,7 +388,7 @@ get_tar_version() { tar --version | head -n1 | awk '{print $NF}'; }
 get_sqlite_version() { sqlite3 --version | awk '{print $1}'; }
 get_mariadb_version() { (mariadb --version 2>/dev/null || mysql --version 2>/dev/null) | sed -E 's/.*Distrib ([0-9.]+).*/\1/'; }
 get_iproute_version() { ip -V 2>/dev/null | sed -E 's/.*iproute2-([0-9.]+).*/\1/'; }
-get_nft_version() { nft --version 2>/dev/null | awk '{print $2}'; }
+get_nft_version() { nft --version 2>/dev/null | awk '{print $2}' | sed 's/^v//'; }
 get_iptables_version() { iptables --version 2>/dev/null | sed -E 's/.*v([0-9.]+).*/\1/'; }
 
 check_version_range() {
