@@ -377,19 +377,19 @@ done
 ADMIN_PASSWORD=$(openssl rand -base64 32 | head -c 24)
 
 # Store in secure location (permissions 0600)
-cat > /root/.npanel-credentials << EOF
+cat > /root/.npanel/credentials << EOF
 Admin User: admin
 Password: $ADMIN_PASSWORD
 Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 First Login URL: https://$(hostname -f)
 EOF
-chmod 0600 /root/.npanel-credentials
+chmod 0600 /root/.npanel/credentials
 
 # Print to console (once)
 log_info "=== FIRST-RUN CREDENTIALS ==="
 log_info "Admin user: admin"
 log_info "Password: $ADMIN_PASSWORD"
-log_info "Saved to: /root/.npanel-credentials"
+log_info "Saved to: /root/.npanel/credentials"
 ```
 
 ### Output Example
@@ -409,7 +409,7 @@ Web UI:        https://203.0.113.42
 API:           https://203.0.113.42:8080/api
 
 Admin User:    admin
-Password:      (see /root/.npanel-credentials)
+Password:      (see /root/.npanel/credentials)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -425,6 +425,13 @@ Support:       https://github.com/omenyx/npanel/issues
 Installation Log: /var/log/npanel-install.log
 Manifest:         /root/.npanel-manifest.json
 ```
+
+### Root Access Compatibility (Administrative)
+
+- **Root account is never a web user.** The UI only accepts nPanel admin credentials.
+- **Root remains the trust anchor** for recovery and bootstrap (e.g., `sudo npanel admin reset-password`).
+- **System authentication is OS-gated** (SSH key/PAM/root password) before root-only recovery commands.
+- **Privileged execution is agent-only** with allow-listed operations.
 
 ---
 
@@ -532,7 +539,7 @@ DEBUG - Internal details (--debug flag)
 log "Connecting to database at $DB_HOST"
 # ❌ DON'T log: log "Password: $DB_PASSWORD"
 
-log "Admin credentials stored in /root/.npanel-credentials (perms: 0600)"
+log "Admin credentials stored in /root/.npanel/credentials (perms: 0600)"
 # ❌ DON'T log password directly
 ```
 

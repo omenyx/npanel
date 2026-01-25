@@ -19,7 +19,7 @@ sudo bash npanel-install.sh
 
 ✅ **AlmaLinux** 8.x, 9.x
 ✅ **Rocky Linux** 8.x, 9.x
-✅ **Ubuntu** 20.04 LTS, 22.04 LTS, 24.04
+✅ **Ubuntu** 20.04 LTS, 22.04 LTS
 ✅ **Debian** 11, 12
 
 ### Check Your System
@@ -103,7 +103,7 @@ After installation completes:
 
 ```bash
 # Get credentials
-cat /root/.npanel-credentials
+cat /root/.npanel/credentials
 
 # Access panel
 open http://$(hostname -I | awk '{print $1}')
@@ -114,7 +114,7 @@ open https://your-domain.com
 ### 2. Login & Change Password
 
 - **Email:** admin@yourdomain.com
-- **Password:** See `/root/.npanel-credentials`
+- **Password:** See `/root/.npanel/credentials`
 - **First Action:** Change admin password immediately
 
 ### 3. Configure Domain & SSL
@@ -387,7 +387,7 @@ sudo sqlite3 /opt/npanel/data/npanel.db ".backup /tmp/npanel-backup.db"
 ### 1. Change Default Credentials
 ```bash
 # Immediately after installation
-cat /root/.npanel-credentials
+cat /root/.npanel/credentials
 # Then login and change password
 ```
 

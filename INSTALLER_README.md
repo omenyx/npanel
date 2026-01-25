@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/install-universa
 |---|---|---|
 | AlmaLinux | 8.x, 9.x | ✅ Full Support |
 | Rocky Linux | 8.x, 9.x | ✅ Full Support |
-| Ubuntu | 20.04 LTS, 22.04 LTS, 24.04 | ✅ Full Support |
+| Ubuntu | 20.04 LTS, 22.04 LTS | ✅ Full Support |
 | Debian | 11, 12 | ✅ Full Support |
 
 **Requirements:** 2+ CPU cores, 2+ GB RAM, 10+ GB free in `/opt`
@@ -96,44 +96,56 @@ sudo bash npanel-install.sh
 
 ```bash
 sudo bash npanel-install.sh --debug
+
+# Verify-only (no changes)
+sudo bash npanel-install.sh --verify-only
 ```
 
 ---
 
 ## ✅ What Happens During Installation
 
-### Phase 1: Pre-Flight Checks
+### Step 1: Pre-Flight Checks
 - OS version validation
 - Resource verification (CPU, RAM, disk, inodes)
 - Permission checks
 - Port availability
 - GitHub connectivity
 
-### Phase 2: State Detection
+### Step 2: State Detection
 - Detects existing installation
 - Determines: fresh / upgrade / repair mode
 
-### Phase 3: GitHub Verification
-- Fetches latest release
+### Step 3: System Verification
+- Package manager detection and repo validation
+- systemd, cgroups v2, filesystem exec, Unix sockets
+
+### Step 4: Package Version Verification
+- systemd, kernel, glibc, openssl, curl, tar
+- sqlite3, mariadb-client, iproute2, nftables/iptables
+
+### Step 5: GitHub Release Verification
+- Fetches release metadata
 - Downloads SHA256 checksums
-- Validates integrity
+- Resolves release artifacts
 
-### Phase 4: Dependencies
-- Installs Go, Node.js, nginx, sqlite3, certbot
-- Distro-specific package selection
+### Step 6: Artifact Compatibility
+- Downloads release artifacts
+- Verifies checksums
+- Runs binary dependency checks (ldd)
 
-### Phase 5: Binary Deployment
+### Step 7: Atomic Deployment
 - Atomic staging deployment
 - Checksum verification
 - Automatic backup
 - Zero-downtime swap
 
-### Phase 6: Configuration
+### Step 8: Configuration
 - Creates system configuration
 - Generates admin credentials
 - Sets up systemd services with cgroup limits
 
-### Phase 7: Startup & Verification
+### Step 9-11: Startup & Verification
 - Starts services with health checks
 - Prints access information
 - Generates credentials report
@@ -145,7 +157,7 @@ sudo bash npanel-install.sh --debug
 ### Get Admin Credentials
 
 ```bash
-cat /root/.npanel-credentials
+cat /root/.npanel/credentials
 ```
 
 ### Access Web UI
@@ -165,6 +177,25 @@ https://<your-domain.com>
 3. Configure domain & SSL
 4. Set up backups
 5. Configure email notifications
+
+---
+
+## 🔐 Root Access Compatibility (Administrative)
+
+**Goal:** Reassure WHM users without exposing the Linux root account to the web UI.
+
+**How it works (high level):**
+- **Authentication layer (OS-gated):** Root-only recovery requires OS authentication (SSH key/PAM/root password) before any panel reset actions.
+- **Authorization layer:** nPanel RBAC maps recovered access to `admin` role.
+- **Execution layer:** Privileged actions run through the root-only agent and allow-listed commands.
+
+**Important:** The Linux root account is never exposed as a web user. Web login uses nPanel admin credentials. Root access is only used for **recovery** and **bootstrap**.
+
+**Root-only recovery command:**
+
+```bash
+sudo npanel admin reset-password
+```
 
 ---
 
