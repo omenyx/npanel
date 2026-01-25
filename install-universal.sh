@@ -206,9 +206,22 @@ phase_dependencies() {
       # Install Go
       log_info "Installing Go..."
       
-      # Check if Go already installed
+      # Check if Go already installed and is correct version
       if command -v go &> /dev/null; then
-        log_success "Go installed"
+        local installed_version=$(go version 2>&1 | awk '{print $3}')
+        if [ "$installed_version" = "go1.23" ] || [ "$installed_version" = "go1.23.0" ]; then
+          log_success "Go 1.23 already installed"
+        else
+          log_warn "Go version $installed_version found, need 1.23, installing binary version..."
+          mkdir -p /tmp/go-install && cd /tmp/go-install
+          wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
+          if [ -f go1.23.linux-amd64.tar.gz ]; then
+            tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
+            echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
+            chmod +x /etc/profile.d/go-path.sh
+          fi
+          cd - > /dev/null && rm -rf /tmp/go-install
+        fi
       else
         log_warn "Go not found, trying fallback binary install..."
         mkdir -p /tmp/go-install && cd /tmp/go-install
@@ -216,13 +229,14 @@ phase_dependencies() {
         if [ -f go1.23.linux-amd64.tar.gz ]; then
           tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
           echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-          chmod +x /etc/profile.d/go-path.sh && source /etc/profile.d/go-path.sh
+          chmod +x /etc/profile.d/go-path.sh
         fi
         cd - > /dev/null && rm -rf /tmp/go-install
-        if ! command -v go &> /dev/null; then
-          log_error "Go installation failed"
-          exit 1
-        fi
+      fi
+      
+      if ! command -v go &> /dev/null; then
+        log_error "Go installation failed"
+        exit 1
       fi
       
       log_success "Go verified: $(go version)"
@@ -256,9 +270,22 @@ phase_dependencies() {
       # Install Go
       log_info "Installing Go..."
       
-      # Check if Go already installed
+      # Check if Go already installed and is correct version
       if command -v go &> /dev/null; then
-        log_success "Go installed"
+        local installed_version=$(go version 2>&1 | awk '{print $3}')
+        if [ "$installed_version" = "go1.23" ] || [ "$installed_version" = "go1.23.0" ]; then
+          log_success "Go 1.23 already installed"
+        else
+          log_warn "Go version $installed_version found, need 1.23, installing binary version..."
+          mkdir -p /tmp/go-install && cd /tmp/go-install
+          wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
+          if [ -f go1.23.linux-amd64.tar.gz ]; then
+            tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
+            echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
+            chmod +x /etc/profile.d/go-path.sh
+          fi
+          cd - > /dev/null && rm -rf /tmp/go-install
+        fi
       else
         log_warn "Go not found, trying fallback binary install..."
         mkdir -p /tmp/go-install && cd /tmp/go-install
@@ -266,14 +293,17 @@ phase_dependencies() {
         if [ -f go1.23.linux-amd64.tar.gz ]; then
           tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
           echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
-          chmod +x /etc/profile.d/go-path.sh && source /etc/profile.d/go-path.sh
+          chmod +x /etc/profile.d/go-path.sh
         fi
         cd - > /dev/null && rm -rf /tmp/go-install
-        if ! command -v go &> /dev/null; then
-          log_error "Go installation failed"
-          exit 1
-        fi
       fi
+      
+      if ! command -v go &> /dev/null; then
+        log_error "Go installation failed"
+        exit 1
+      fi
+      
+      log_success "Go verified: $(go version)"
       
       log_success "Go verified: $(go version)"
       log_info "Installing system packages..."
@@ -320,11 +350,6 @@ phase_binaries() {
   # Source any profile scripts that might set Go
   if [ -f /etc/profile.d/go-path.sh ]; then
     source /etc/profile.d/go-path.sh
-  fi
-  
-  # Also source bash.bashrc for non-login shells
-  if [ -f /etc/bash.bashrc ]; then
-    source /etc/bash.bashrc
   fi
   
   # CRITICAL: Verify Go absolutely works
