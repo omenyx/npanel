@@ -136,11 +136,14 @@ update_system() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get update -qq
-            apt-get upgrade -y > /dev/null 2>&1
+            log "  Running: apt-get update"
+            apt-get update
+            log "  Running: apt-get upgrade"
+            apt-get upgrade -y
             ;;
         dnf)
-            dnf update -y > /dev/null 2>&1
+            log "  Running: dnf update"
+            dnf update -y
             ;;
     esac
     
@@ -152,32 +155,60 @@ install_dependencies() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get install -y \
-                golang-1.23 nodejs npm \
-                git sqlite3 curl wget \
-                build-essential gcc make \
-                procps sysstat \
-                systemd nginx \
-                exim4 \
-                pdns-server \
-                certbot python3-certbot-nginx \
-                prometheus grafana-server \
-                rsync openssh-server \
-                > /dev/null 2>&1
+            log "  Installing: golang nodejs npm git sqlite3..."
+            apt-get install -y golang-1.23 nodejs npm git sqlite3
+            
+            log "  Installing: build tools (gcc, make)..."
+            apt-get install -y build-essential gcc make
+            
+            log "  Installing: system monitoring tools..."
+            apt-get install -y procps sysstat curl wget
+            
+            log "  Installing: nginx web server..."
+            apt-get install -y systemd nginx
+            
+            log "  Installing: email service (exim4)..."
+            apt-get install -y exim4
+            
+            log "  Installing: DNS service (pdns-server)..."
+            apt-get install -y pdns-server
+            
+            log "  Installing: SSL certificates (certbot)..."
+            apt-get install -y certbot python3-certbot-nginx
+            
+            log "  Installing: monitoring (prometheus, grafana)..."
+            apt-get install -y prometheus grafana-server
+            
+            log "  Installing: utilities (rsync, openssh-server)..."
+            apt-get install -y rsync openssh-server
             ;;
         dnf)
-            dnf install -y \
-                golang nodejs npm \
-                git sqlite curl wget \
-                gcc make \
-                procps-ng sysstat \
-                systemd nginx \
-                exim \
-                pdns \
-                certbot certbot-nginx \
-                prometheus grafana \
-                rsync openssh-server \
-                > /dev/null 2>&1
+            log "  Installing: golang nodejs npm git sqlite3..."
+            dnf install -y golang nodejs npm git sqlite
+            
+            log "  Installing: build tools (gcc, make)..."
+            dnf install -y gcc make
+            
+            log "  Installing: system monitoring tools..."
+            dnf install -y procps-ng sysstat curl wget
+            
+            log "  Installing: nginx web server..."
+            dnf install -y systemd nginx
+            
+            log "  Installing: email service (exim)..."
+            dnf install -y exim
+            
+            log "  Installing: DNS service (pdns)..."
+            dnf install -y pdns
+            
+            log "  Installing: SSL certificates (certbot)..."
+            dnf install -y certbot certbot-nginx
+            
+            log "  Installing: monitoring (prometheus, grafana)..."
+            dnf install -y prometheus grafana
+            
+            log "  Installing: utilities (rsync, openssh-server)..."
+            dnf install -y rsync openssh-server
             ;;
     esac
     
@@ -228,12 +259,20 @@ SQL
         "https://raw.githubusercontent.com/omenyx/npanel/main/backend/migrations/005_cgroups_v2.sql"
     )
     
-    for migration in "${migrations[@]}"; do
-        log "Running: $migration"
-        curl -fsSL "$migration" | sqlite3 "$DATA_PATH/npanel.db"
+    for i in "${!migrations[@]}"; do
+        migration="${migrations[$i]}"
+        local migration_num=$((i + 1))
+        log "  [Migration $migration_num/5] Running: $(basename $migration)..."
+        if curl -fsSL "$migration" | sqlite3 "$DATA_PATH/npanel.db"; then
+            success "  Migration $migration_num completed"
+        else
+            error "  Migration $migration_num failed"
+            return 1
+        fi
     done
     
     # Verify database
+    log "Verifying database structure..."
     local table_count=$(sqlite3 "$DATA_PATH/npanel.db" "SELECT COUNT(*) FROM sqlite_master WHERE type='table';" 2>/dev/null || echo "0")
     
     if [ "$table_count" -gt 40 ]; then
@@ -247,37 +286,47 @@ SQL
 # ==================== CODE DEPLOYMENT ====================
 
 deploy_code() {
-    log "Deploying application code..."
+    log "Deploying application code from GitHub..."
     
     cd "$INSTALL_PATH"
     
     # Clone repository
-    log "Cloning repository from GitHub..."
-    git clone --depth 1 https://github.com/omenyx/npanel.git . 2>/dev/null
+    log "  Step 1/3: Cloning repository..."
+    git clone --depth 1 https://github.com/omenyx/npanel.git .
+    success "  Repository cloned"
     
     # Build backend
-    log "Building backend API..."
+    log "  Step 2/3: Building backend API server..."
     cd backend
-    go mod download > /dev/null 2>&1
-    go build -o "$INSTALL_PATH/bin/npanel-api" . > /dev/null 2>&1
+    log "    Downloading Go modules..."
+    go mod download
+    log "    Compiling Go code..."
+    go build -o "$INSTALL_PATH/bin/npanel-api" .
+    success "    Backend API built"
     cd ..
     
     # Build frontend
-    log "Building frontend..."
+    log "  Step 3/3: Building React frontend..."
     cd frontend
-    npm install > /dev/null 2>&1
-    npm run build > /dev/null 2>&1
+    log "    Installing npm dependencies..."
+    npm install
+    log "    Building production bundle..."
+    npm run build
+    log "    Copying build artifacts..."
     cp -r build/* "$INSTALL_PATH/public/" 2>/dev/null || true
+    success "    Frontend built"
     cd ..
     
     # Build agent
-    log "Building agent..."
+    log "  Building agent service..."
     cd agent
-    go build -o "$INSTALL_PATH/bin/npanel-agent" . > /dev/null 2>&1
+    log "    Compiling Go agent..."
+    go build -o "$INSTALL_PATH/bin/npanel-agent" .
     chmod 4755 "$INSTALL_PATH/bin/npanel-agent"
+    success "    Agent built with setuid"
     cd ..
     
-    success "Application code deployed"
+    success "Application code deployed successfully"
 }
 
 # ==================== SERVICES ====================
@@ -285,6 +334,7 @@ deploy_code() {
 setup_services() {
     log "Setting up systemd services..."
     
+    log "  Creating npanel-agent service..."
     # Agent service
     cat > /etc/systemd/system/npanel-agent.service << 'EOF'
 [Unit]
@@ -304,7 +354,10 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
+    
+    success "  Agent service created"
 
+    log "  Creating npanel-api service..."
     # API service
     cat > /etc/systemd/system/npanel-api.service << 'EOF'
 [Unit]
@@ -339,8 +392,9 @@ EOF
 # ==================== WEB SERVER ====================
 
 setup_nginx() {
-    log "Configuring Nginx..."
+    log "Configuring Nginx reverse proxy..."
     
+    log "  Writing nginx configuration..."
     cat > /etc/nginx/sites-available/npanel << 'EOF'
 server {
     listen 80;
@@ -371,12 +425,21 @@ server {
 }
 EOF
 
+    log "  Enabling site..."
     ln -sf /etc/nginx/sites-available/npanel /etc/nginx/sites-enabled/
     
     # Test nginx config
-    nginx -t > /dev/null 2>&1
+    log "  Testing nginx configuration..."
+    if nginx -t > /dev/null 2>&1; then
+        success "  Nginx configuration valid"
+    else
+        error "  Nginx configuration invalid"
+        return 1
+    fi
     
+    log "  Enabling nginx service..."
     systemctl enable nginx
+    log "  Starting nginx..."
     systemctl restart nginx
     
     success "Nginx configured and started"
@@ -385,35 +448,50 @@ EOF
 # ==================== SSL/TLS ====================
 
 setup_ssl() {
-    log "Setting up SSL/TLS..."
+    log "Setting up SSL/TLS certificates..."
     
     if [ -z "$SERVER_HOSTNAME" ]; then
         warning "No hostname provided - skipping Let's Encrypt"
-        log "To add SSL later: certbot certonly --nginx -d $HOSTNAME"
+        log "  To add SSL later: certbot certonly --nginx -d <your-domain>"
     else
-        log "Requesting Let's Encrypt certificate for $SERVER_HOSTNAME..."
-        certbot certonly --nginx -d "$SERVER_HOSTNAME" --non-interactive --agree-tos -m "$ADMIN_EMAIL" 2>/dev/null || \
-            warning "Let's Encrypt setup failed - install manually later"
+        log "  Requesting Let's Encrypt certificate for $SERVER_HOSTNAME..."
+        if certbot certonly --nginx -d "$SERVER_HOSTNAME" --non-interactive --agree-tos -m "$ADMIN_EMAIL" 2>/dev/null; then
+            success "  Let's Encrypt certificate acquired"
+        else
+            warning "  Let's Encrypt setup failed - will use self-signed fallback"
+        fi
     fi
     
     # Self-signed cert fallback
     if [ ! -f /etc/ssl/certs/npanel.crt ]; then
+        log "  Generating self-signed certificate..."
         openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
             -keyout /etc/ssl/private/npanel.key \
             -out /etc/ssl/certs/npanel.crt \
-            -subj "/CN=localhost" > /dev/null 2>&1
-        success "Self-signed certificate created"
+            -subj "/CN=localhost"
+        success "  Self-signed certificate created"
     fi
 }
 
 # ==================== MONITORING ====================
 
 setup_monitoring() {
-    log "Setting up Prometheus monitoring..."
+    log "Setting up monitoring infrastructure..."
     
+    log "  Downloading Prometheus configuration..."
     # Get Prometheus config
     curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/config/prometheus_phase5.yml \
         -o /etc/prometheus/npanel-phase5.yml 2>/dev/null || true
+    
+    log "  Enabling Prometheus service..."
+    systemctl enable prometheus
+    systemctl restart prometheus
+    success "  Prometheus configured (:9090)"
+    
+    log "  Enabling Grafana service..."
+    systemctl enable grafana-server
+    systemctl restart grafana-server
+    success "  Grafana configured (:3000)"
     
     # Create scrape config
     mkdir -p /etc/prometheus/npanel
@@ -443,9 +521,11 @@ EOF
 setup_email() {
     log "Setting up email service (Exim4)..."
     
+    log "  Creating Exim4 configuration..."
     # Configure Exim4
     mkdir -p /etc/exim4/conf.d/{main,router,transport,auth,acl}
     
+    log "  Enabling Exim4 service..."
     systemctl enable exim4
     systemctl start exim4
     
@@ -457,13 +537,17 @@ setup_email() {
 setup_dns() {
     log "Setting up DNS service (PowerDNS)..."
     
+    log "  Creating PowerDNS configuration..."
     # Create PowerDNS config
     mkdir -p /etc/powerdns
     
+    log "  Enabling PowerDNS service..."
     systemctl enable pdns
-    systemctl start pdns 2>/dev/null || warning "PowerDNS start failed - configure manually"
-    
-    success "DNS service configured"
+    if systemctl start pdns 2>/dev/null; then
+        success "DNS service configured"
+    else
+        warning "PowerDNS start failed - configure manually later"
+    fi
 }
 
 # ==================== INITIALIZATION ====================
@@ -476,9 +560,11 @@ init_admin_user() {
         return
     fi
     
+    log "  Generating password hash..."
     # Hash password (bcrypt-style)
     local password_hash=$(echo -n "$ADMIN_PASSWORD" | sha256sum | awk '{print $1}')
     
+    log "  Inserting admin user into database..."
     # Insert admin user
     sqlite3 "$DATA_PATH/npanel.db" <<SQL
 INSERT OR IGNORE INTO accounts (
@@ -502,10 +588,13 @@ SQL
 record_baseline() {
     log "Recording performance baseline..."
     
+    log "  Downloading baseline measurement script..."
     curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/scripts/measure_baseline.sh \
         -o "$INSTALL_PATH/scripts/measure_baseline.sh"
     
     chmod +x "$INSTALL_PATH/scripts/measure_baseline.sh"
+    
+    log "  Running baseline measurements..."
     bash "$INSTALL_PATH/scripts/measure_baseline.sh" > /dev/null 2>&1 || true
     
     success "Baseline recorded"
@@ -514,45 +603,49 @@ record_baseline() {
 # ==================== VERIFICATION ====================
 
 verify_installation() {
-    log "Verifying installation..."
+    log "Verifying installation components..."
     
     local checks=0
     
     # Check binaries
+    log "  Checking binaries..."
     if [ -x "$INSTALL_PATH/bin/npanel-api" ]; then
-        success "API binary installed"
+        success "  API binary installed"
         ((checks++))
     else
-        error "API binary missing"
+        error "  API binary missing"
     fi
     
     if [ -x "$INSTALL_PATH/bin/npanel-agent" ]; then
-        success "Agent binary installed"
+        success "  Agent binary installed"
         ((checks++))
     else
-        error "Agent binary missing"
+        error "  Agent binary missing"
     fi
     
     # Check database
+    log "  Checking database..."
     if [ -f "$DATA_PATH/npanel.db" ]; then
-        success "Database initialized"
+        success "  Database initialized"
         ((checks++))
     else
-        error "Database missing"
+        error "  Database missing"
     fi
     
     # Check nginx
+    log "  Checking web server..."
     if systemctl is-enabled nginx > /dev/null 2>&1; then
-        success "Nginx configured"
+        success "  Nginx configured"
         ((checks++))
     else
-        error "Nginx not configured"
+        error "  Nginx not configured"
     fi
     
     # Check services
+    log "  Checking services..."
     for service in npanel-agent npanel-api npanel-watchdog; do
         if systemctl is-enabled "$service" > /dev/null 2>&1; then
-            success "$service enabled"
+            success "  $service enabled"
             ((checks++))
         fi
     done
@@ -565,12 +658,15 @@ verify_installation() {
 start_services() {
     log "Starting all services..."
     
+    log "  Starting npanel-agent..."
     systemctl start npanel-agent
     sleep 2
     
+    log "  Starting npanel-api..."
     systemctl start npanel-api
     sleep 2
     
+    log "  Starting npanel-watchdog..."
     systemctl start npanel-watchdog
     
     log "Waiting for services to stabilize..."
@@ -580,8 +676,10 @@ start_services() {
     local running=0
     for service in npanel-agent npanel-api npanel-watchdog; do
         if systemctl is-active --quiet "$service"; then
-            success "$service is running"
+            success "  $service is running"
             ((running++))
+        else
+            error "  $service failed to start"
         fi
     done
     
