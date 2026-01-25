@@ -443,8 +443,11 @@ check_systemd_running() {
   if ! pidof systemd >/dev/null 2>&1; then
     fail "systemd is not running" "Boot with systemd as PID 1"
   fi
-  if ! systemctl is-system-running --quiet; then
-    fail "systemd is not healthy" "Check: systemctl status" "Resolve systemd failures before installing"
+  local systemd_state
+  systemd_state="$(systemctl is-system-running 2>/dev/null || echo 'unknown')"
+  # WSL2 systemd often reports "degraded" but is functional
+  if [[ "$systemd_state" == "offline" ]] || [[ "$systemd_state" == "unknown" ]]; then
+    fail "systemd is not healthy (state: $systemd_state)" "Check: systemctl status" "Resolve systemd failures before installing"
   fi
   log_success "systemd is running"
 }
@@ -728,21 +731,21 @@ phase_preflight() {
   
   log_info "Detected: $DISTRO $VERSION"
   
-  case "$distro" in
+  case "$DISTRO" in
     ubuntu)
-      if ! [[ "$VERSION" =~ ^(20.04|22.04)$ ]]; then
+      if ! [[ "$VERSION" =~ ^(20\.04|22\.04) ]]; then
         log_error "Ubuntu $VERSION not supported (need 20.04 or 22.04)"
         exit "$EXIT_UNSUPPORTED_OS"
       fi
       ;;
     debian)
-      if ! [[ "$VERSION" =~ ^(11|12)$ ]]; then
+      if ! [[ "$VERSION" =~ ^(11|12) ]]; then
         log_error "Debian $VERSION not supported (need 11 or 12)"
         exit "$EXIT_UNSUPPORTED_OS"
       fi
       ;;
     rocky|almalinux)
-      if ! [[ "$VERSION" =~ ^(8|9)$ ]]; then
+      if ! [[ "$VERSION" =~ ^(8|9) ]]; then
         log_error "$DISTRO $VERSION not supported (need 8 or 9)"
         exit "$EXIT_UNSUPPORTED_OS"
       fi
