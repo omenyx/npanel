@@ -1,0 +1,301 @@
+# Prometheus configuration for nPanel Phase 5
+# Phase 5, Task 1.6: Monitoring & Metrics Setup
+# Location: /etc/prometheus/nPanel.yml
+# Scraped by: scrape_configs
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'npanel-phase5'
+
+# ==================== SCRAPE CONFIGS ====================
+
+scrape_configs:
+  - job_name: 'npanel-api'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'api'
+          
+  - job_name: 'npanel-agent'
+    static_configs:
+      - targets: ['localhost:9091']
+        labels:
+          service: 'agent'
+          
+  - job_name: 'npanel-cgroups'
+    static_configs:
+      - targets: ['localhost:9092']
+        labels:
+          service: 'cgroups'
+
+# ==================== METRICS COLLECTION ====================
+
+# Cgroups v2 Resource Isolation (Task 1.1)
+# Metrics exported by agent/cgroups.go
+
+metrics:
+  - name: npanel_cgroups_cpu_usage_percent
+    type: gauge
+    help: "CPU usage percentage per account (0-100)"
+    labels:
+      - account_id
+      
+  - name: npanel_cgroups_memory_usage_bytes
+    type: gauge
+    help: "Memory usage in bytes per account"
+    labels:
+      - account_id
+      
+  - name: npanel_cgroups_memory_limit_bytes
+    type: gauge
+    help: "Memory limit in bytes per account"
+    labels:
+      - account_id
+      
+  - name: npanel_cgroups_pid_count
+    type: gauge
+    help: "Current process count per account"
+    labels:
+      - account_id
+      
+  - name: npanel_cgroups_pid_limit
+    type: gauge
+    help: "Maximum process limit per account"
+    labels:
+      - account_id
+      
+  - name: npanel_cgroups_limit_exceeded_total
+    type: counter
+    help: "Number of times account hit resource limit"
+    labels:
+      - account_id
+      - resource_type
+
+  - name: npanel_cgroups_cpu_throttled_ms_total
+    type: counter
+    help: "Total milliseconds CPU throttled"
+    labels:
+      - account_id
+
+# Email Rate Limiting (Task 1.2)
+  - name: npanel_email_rate_limit_rejected_total
+    type: counter
+    help: "Emails rejected due to rate limiting"
+    labels:
+      - account_id
+      
+  - name: npanel_email_rate_limit_current
+    type: gauge
+    help: "Current email rate (per minute)"
+    labels:
+      - account_id
+      
+  - name: npanel_email_rate_limit_configured
+    type: gauge
+    help: "Configured email rate limit"
+    labels:
+      - account_id
+
+# Agent Watchdog (Task 1.3)
+  - name: npanel_agent_health_status
+    type: gauge
+    help: "Agent health status (1=healthy, 0=unhealthy)"
+    value: 1
+    
+  - name: npanel_agent_recovery_total
+    type: counter
+    help: "Number of times agent was recovered"
+    
+  - name: npanel_agent_recovery_latency_seconds
+    type: histogram
+    help: "Time to recover agent from unhealthy state"
+    buckets: [0.5, 1.0, 2.0, 5.0, 10.0]
+    
+  - name: npanel_agent_socket_latency_ms
+    type: histogram
+    help: "Socket communication latency"
+    buckets: [1, 5, 10, 20, 50, 100]
+
+# Performance Baseline (Task 1.4)
+  - name: npanel_cpu_idle_percent
+    type: gauge
+    help: "System CPU idle percentage"
+    
+  - name: npanel_memory_usage_percent
+    type: gauge
+    help: "System memory usage percentage"
+    
+  - name: npanel_api_response_time_ms
+    type: histogram
+    help: "API response time"
+    buckets: [10, 25, 50, 100, 250, 500]
+    
+  - name: npanel_api_requests_total
+    type: counter
+    help: "Total API requests"
+    labels:
+      - method
+      - endpoint
+      - status_code
+
+# Feature Gating Infrastructure (Task 1.5)
+  - name: npanel_feature_flag_state
+    type: gauge
+    help: "Feature flag state (1=enabled, 0=disabled)"
+    labels:
+      - feature_name
+      
+  - name: npanel_feature_flag_toggles_total
+    type: counter
+    help: "Number of feature flag toggles"
+    labels:
+      - feature_name
+      - action
+
+# Database & General
+  - name: npanel_database_size_bytes
+    type: gauge
+    help: "SQLite database file size"
+    
+  - name: npanel_database_query_time_ms
+    type: histogram
+    help: "Database query execution time"
+    buckets: [1, 5, 10, 25, 50, 100]
+    
+  - name: npanel_account_count
+    type: gauge
+    help: "Current account count"
+
+# ==================== ALERT RULES ====================
+
+alert_rules:
+  # CPU regression detection
+  - alert: CPUIdleDeclined
+    expr: 'npanel_cpu_idle_percent < 96'  # Baseline: 98%, threshold: 96%
+    for: 5m
+    annotations:
+      summary: "CPU idle below threshold"
+      description: "System CPU idle: {{ $value }}% (target: ≥96%)"
+
+  - alert: CgroupsCPUThrottled
+    expr: 'rate(npanel_cgroups_cpu_throttled_ms_total[5m]) > 100'
+    for: 2m
+    annotations:
+      summary: "Account CPU being throttled"
+      description: "Account {{ $labels.account_id }} CPU throttled"
+
+  # Memory regression detection
+  - alert: MemoryUsageIncreased
+    expr: 'npanel_memory_usage_percent > 85'  # Baseline + 5%
+    for: 5m
+    annotations:
+      summary: "System memory usage elevated"
+      description: "System memory: {{ $value }}%"
+
+  - alert: CgroupsMemoryLimitExceeded
+    expr: 'npanel_cgroups_memory_usage_bytes / npanel_cgroups_memory_limit_bytes > 0.9'
+    for: 1m
+    annotations:
+      summary: "Account memory limit near threshold"
+      description: "Account {{ $labels.account_id }} memory usage: {{ $value | humanizePercentage }}"
+
+  # Latency regression detection
+  - alert: APILatencyIncreased
+    expr: 'histogram_quantile(0.95, npanel_api_response_time_ms) > 150'
+    for: 5m
+    annotations:
+      summary: "API latency above baseline"
+      description: "P95 latency: {{ $value }}ms (target: <100ms)"
+
+  # Agent health
+  - alert: AgentUnhealthy
+    expr: 'npanel_agent_health_status != 1'
+    for: 1m
+    annotations:
+      summary: "Agent health check failing"
+      
+  - alert: AgentRecoveryLatency
+    expr: 'npanel_agent_recovery_latency_seconds > 10'
+    for: 1m
+    annotations:
+      summary: "Agent recovery taking too long"
+      description: "Recovery latency: {{ $value }}s (max: 10s)"
+
+  # Email rate limiting
+  - alert: EmailRateLimitRejecting
+    expr: 'rate(npanel_email_rate_limit_rejected_total[5m]) > 10'
+    for: 5m
+    annotations:
+      summary: "Email rate limiting rejecting messages"
+      description: "Account {{ $labels.account_id }}: {{ $value }} rejections/sec"
+
+  # PID exhaustion
+  - alert: CgroupsPIDLimitNear
+    expr: 'npanel_cgroups_pid_count / npanel_cgroups_pid_limit > 0.8'
+    for: 2m
+    annotations:
+      summary: "Account approaching PID limit"
+      description: "Account {{ $labels.account_id }}: {{ $value | humanizePercentage }} of PIDs"
+
+  # Database size regression
+  - alert: DatabaseSizeIncreased
+    expr: 'npanel_database_size_bytes > 500000000'  # 500 MB
+    for: 10m
+    annotations:
+      summary: "Database size above threshold"
+      description: "Database: {{ $value | humanize }}B"
+
+  # Cgroups feature disabled unexpectedly
+  - alert: RequiredFeatureDisabled
+    expr: 'npanel_feature_flag_state{feature_name="cgroups_isolation"} == 0'
+    for: 1m
+    annotations:
+      summary: "Required feature disabled"
+      description: "Feature {{ $labels.feature_name }} is disabled"
+
+# ==================== GRAFANA DASHBOARD ====================
+
+dashboard:
+  name: "nPanel Phase 5 Overview"
+  panels:
+    - title: "CPU Idle %"
+      query: "npanel_cpu_idle_percent"
+      yaxis: "Percent"
+      alert_threshold: 96
+      
+    - title: "System Memory Usage"
+      query: "npanel_memory_usage_percent"
+      yaxis: "Percent"
+      
+    - title: "Account Resource Usage"
+      query: "npanel_cgroups_cpu_usage_percent"
+      group_by: "account_id"
+      
+    - title: "API Response Time P95"
+      query: "histogram_quantile(0.95, npanel_api_response_time_ms)"
+      yaxis: "Milliseconds"
+      alert_threshold: 150
+      
+    - title: "Agent Health Status"
+      query: "npanel_agent_health_status"
+      yaxis: "Status (1=healthy)"
+      
+    - title: "Feature Flags Status"
+      query: "npanel_feature_flag_state"
+      group_by: "feature_name"
+      
+    - title: "Email Rate Limiting Activity"
+      query: "rate(npanel_email_rate_limit_rejected_total[5m])"
+      
+    - title: "Database Query Performance"
+      query: "histogram_quantile(0.95, npanel_database_query_time_ms)"
+      yaxis: "Milliseconds"
+
+# ==================== RETENTION POLICY ====================
+
+retention:
+  high_resolution: 7d      # 15s scrape interval
+  medium_resolution: 30d   # 5m resolution
+  low_resolution: 1y       # 1h resolution

@@ -1,0 +1,54 @@
+[Unit]
+Description=nPanel Agent Watchdog - Health Monitoring & Auto-Recovery
+Documentation=https://github.com/omenyx/npanel/wiki/Phase5
+Requires=npanel-agent.service
+After=npanel-agent.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/npanel
+
+# Watchdog executable path
+ExecStart=/opt/npanel/bin/npanel-watchdog \
+    --socket=/run/npanel/agent.sock \
+    --interval=6s \
+    --timeout=3s \
+    --log-level=info
+
+# Restart if watchdog dies
+Restart=always
+RestartSec=5s
+
+# Resource limits (minimal overhead)
+MemoryLimit=32M
+CPUQuota=5%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=npanel-watchdog
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Allow access to necessary paths
+ReadWritePaths=/run/npanel
+ReadOnlyPaths=/opt/npanel
+ReadOnlyPaths=/sys/fs/cgroup
+
+[Install]
+WantedBy=multi-user.target
