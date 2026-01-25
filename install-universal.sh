@@ -205,24 +205,52 @@ phase_dependencies() {
       
       # Install Go
       log_info "Installing Go 1.23..."
-      if ! command -v go &> /dev/null || [ "$(go version | awk '{print $3}')" != "go1.23" ]; then
-        if ! apt-get install -y -qq golang-1.23 2>&1 | tee -a "$LOG_FILE"; then
-          log_warn "Go 1.23 from apt failed, installing from official source..."
-          mkdir -p /tmp/go-install
-          cd /tmp/go-install
-          if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
-            log_error "Failed to download Go"
-            exit 1
-          fi
-          tar -xzf go1.23.linux-amd64.tar.gz
-          rm -rf /usr/local/go
-          mv go /usr/local/
-          cd - > /dev/null
-          rm -rf /tmp/go-install
+      
+      # Check if Go already works
+      if command -v go &> /dev/null && [ "$(go version 2>&1 | awk '{print $3}')" = "go1.23" ]; then
+        log_success "Go 1.23 already installed and functional"
+      else
+        log_warn "Go 1.23 not found or broken, installing fresh..."
+        
+        # Remove any broken Go installation
+        rm -rf /usr/local/go /usr/lib/go-* 2>/dev/null || true
+        
+        # Download and install official Go binary (most reliable)
+        log_info "Downloading official Go 1.23 binary..."
+        mkdir -p /tmp/go-install
+        cd /tmp/go-install
+        
+        if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
+          log_error "Failed to download Go"
+          exit 1
         fi
-        export PATH="/usr/local/go/bin:$PATH"
+        
+        tar -xzf go1.23.linux-amd64.tar.gz
+        rm -rf /usr/local/go
+        mv go /usr/local/
+        cd - > /dev/null
+        rm -rf /tmp/go-install
+        
+        # Ensure Go is in PATH permanently
+        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
+        chmod +x /etc/profile.d/go-path.sh
+        source /etc/profile.d/go-path.sh
+        
+        # Also add to bashrc for non-login shells
+        if ! grep -q "/usr/local/go/bin" /etc/bash.bashrc 2>/dev/null; then
+          echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/bash.bashrc
+        fi
+        
+        # Verify installation
+        if ! /usr/local/go/bin/go version &> /dev/null; then
+          log_error "Go installation failed - binary doesn't work"
+          exit 1
+        fi
       fi
-      log_success "Go installed"
+      
+      # Set PATH for current shell
+      export PATH="/usr/local/go/bin:$PATH"
+      log_success "Go verified: $(/usr/local/go/bin/go version)"
       
       # Install Node.js
       log_info "Installing Node.js 20..."
@@ -249,28 +277,52 @@ phase_dependencies() {
       
       # Install Go
       log_info "Installing Go 1.23..."
-      if ! command -v go &> /dev/null || [ "$(go version | awk '{print $3}')" != "go1.23" ]; then
-        log_info "Downloading Go 1.23..."
+      
+      # Check if Go already works
+      if command -v go &> /dev/null && [ "$(go version 2>&1 | awk '{print $3}')" = "go1.23" ]; then
+        log_success "Go 1.23 already installed and functional"
+      else
+        log_warn "Go 1.23 not found or broken, installing fresh..."
+        
+        # Remove any broken Go installation
+        rm -rf /usr/local/go /usr/lib/go-* 2>/dev/null || true
+        
+        # Download and install official Go binary (most reliable)
+        log_info "Downloading official Go 1.23 binary..."
         mkdir -p /tmp/go-install
         cd /tmp/go-install
+        
         if ! wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz; then
           log_error "Failed to download Go"
           exit 1
         fi
+        
         tar -xzf go1.23.linux-amd64.tar.gz
         rm -rf /usr/local/go
         mv go /usr/local/
         cd - > /dev/null
         rm -rf /tmp/go-install
-        # Persist Go path for all shell sessions
-        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
-        chmod +x /etc/profile.d/go-path.sh
-        source /etc/profile.d/go-path.shons
+        
+        # Ensure Go is in PATH permanently
         echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
         chmod +x /etc/profile.d/go-path.sh
         source /etc/profile.d/go-path.sh
+        
+        # Also add to bashrc for non-login shells
+        if ! grep -q "/usr/local/go/bin" /etc/bash.bashrc 2>/dev/null; then
+          echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/bash.bashrc
+        fi
+        
+        # Verify installation
+        if ! /usr/local/go/bin/go version &> /dev/null; then
+          log_error "Go installation failed - binary doesn't work"
+          exit 1
+        fi
       fi
-      log_success "Go installed"
+      
+      # Set PATH for current shell
+      export PATH="/usr/local/go/bin:$PATH"
+      log_success "Go verified: $(/usr/local/go/bin/go version)"
       
       # Install Node.js
       log_info "Installing Node.js 20..."
@@ -300,36 +352,30 @@ phase_dependencies() {
 phase_binaries() {
   log_info "PHASE 5/7: BINARY BUILD & DEPLOYMENT"
   
-  # Ensure Go is in PATH for build phase
+  # CRITICAL: Ensure absolute path to Go for subshells
+  export PATH="/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+  
+  # Source any profile scripts that might set Go
   if [ -f /etc/profile.d/go-path.sh ]; then
     source /etc/profile.d/go-path.sh
   fi
-  export PATH="/usr/local/go/bin:/usr/bin:/bin:$PATH"
   
-  # CRITICAL: Verify Go actually works
-  if ! command -v go &> /dev/null; then
-    log_error "CRITICAL: Go command not found in PATH"
-    log_error "Current PATH: $PATH"
-    
-    # Try to find where Go was installed
-    if [ -f /usr/local/go/bin/go ]; then
-      log_error "Found Go at /usr/local/go/bin/go, adding to PATH"
-      export PATH="/usr/local/go/bin:$PATH"
-    elif command -v go 2>/dev/null; then
-      log_info "Found Go at: $(which go)"
-    else
-      log_error "Go binary not found anywhere. Installation failed."
-      exit "$EXIT_UNRECOVERABLE"
-    fi
+  # Also source bash.bashrc for non-login shells
+  if [ -f /etc/bash.bashrc ]; then
+    source /etc/bash.bashrc
   fi
   
-  # Verify Go version
-  local go_version
-  go_version=$(go version 2>&1) || {
-    log_error "CRITICAL: Go exists but fails to run"
-    log_error "Error: $go_version"
+  # CRITICAL: Verify Go absolutely works
+  log_info "Verifying Go installation..."
+  if ! /usr/local/go/bin/go version > /dev/null 2>&1; then
+    log_error "CRITICAL: Go binary at /usr/local/go/bin/go doesn't work"
+    log_error "This usually means Go installation failed or binary is corrupted"
+    log_error "Try running manually: /usr/local/go/bin/go version"
     exit "$EXIT_UNRECOVERABLE"
-  }
+  fi
+  
+  local go_version
+  go_version=$(/usr/local/go/bin/go version)
   log_success "Go verified: $go_version"
   
   local staging_dir="/tmp/npanel-staging-$$"
@@ -371,14 +417,17 @@ phase_binaries() {
     log_info "Working directory: $(pwd)"
     log_info "Downloading Go modules (this may take 2-3 minutes)..."
     
+    # Use absolute path to go binary
+    local go_bin="/usr/local/go/bin/go"
+    
     # Try go mod download first
-    if go mod download 2>&1 | tee -a "$LOG_FILE"; then
+    if $go_bin mod download 2>&1 | tee -a "$LOG_FILE"; then
       log_success "Go modules downloaded successfully"
     else
       log_warn "go mod download failed, attempting go mod vendor fallback..."
       
       # Fallback: use vendor directory
-      if ! go mod vendor >> "$LOG_FILE" 2>&1; then
+      if ! $go_bin mod vendor >> "$LOG_FILE" 2>&1; then
         log_error "Both go mod download and go mod vendor failed"
         log_error "Last 30 lines of build log:"
         tail -30 "$LOG_FILE" | sed 's/^/  /'
@@ -390,7 +439,7 @@ phase_binaries() {
     fi
     
     log_info "Building binary..."
-    if ! go build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
+    if ! $go_bin build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build backend API"
       cd - > /dev/null || exit 1
       rm -rf "$staging_dir"
