@@ -1,0 +1,17 @@
+[Unit]
+Description=Lean Panel API
+After=network.target
+
+[Service]
+Type=simple
+User=panel
+Group=panel
+WorkingDirectory=/opt/panel/backend
+EnvironmentFile=/etc/panel/panel.env
+ExecStartPre=/opt/panel/backend/.venv/bin/alembic -c /opt/panel/backend/alembic.ini upgrade head
+ExecStart=/opt/panel/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

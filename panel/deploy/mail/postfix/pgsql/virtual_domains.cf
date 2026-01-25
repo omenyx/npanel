@@ -1,0 +1,6 @@
+# Query domains served by this mail host
+user = panel
+password = panel
+hosts = postgres
+dbname = panel
+query = SELECT 1 FROM mail_domains WHERE domain='%s'

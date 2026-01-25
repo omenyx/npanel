@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Lean Panel{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="card">
+  <p>Service: <strong>{{ service_id or "(none)" }}</strong></p>
+  <p>Status: <strong>{{ service_status or "(not authenticated)" }}</strong></p>
+  <p>Billing actions happen in WHMCS.</p>
+</div>
+{% endblock %}

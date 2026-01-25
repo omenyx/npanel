@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}DNS — Lean Panel{% endblock %}
+{% block content %}
+<h1>DNS</h1>
+
+<div class="card">
+  {% if not service_id %}
+    <p>You are not authenticated. Open the panel via WHMCS SSO.</p>
+  {% elif not dns_enabled %}
+    <p>DNS is not enabled for this service.</p>
+  {% else %}
+    <h2>Create zone</h2>
+    <form method="post" action="/dns/zones">
+      <label>Zone (FQDN)
+        <input name="name" placeholder="example.com" required />
+      </label>
+      <div style="margin-top: 10px;">
+        <button type="submit">Create</button>
+      </div>
+    </form>
+
+    <h2 style="margin-top: 16px;">Zones</h2>
+    {% if zones|length == 0 %}
+      <p>No zones yet.</p>
+    {% else %}
+      <ul>
+        {% for z in zones %}
+          <li><strong>{{ z.zone_name }}</strong></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

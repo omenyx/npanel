@@ -1,0 +1,7 @@
+# Phase 1: no aliases yet (safest default).
+# Keep file present so Postfix config is stable.
+user = panel
+password = panel
+hosts = postgres
+dbname = panel
+query = SELECT NULL WHERE false

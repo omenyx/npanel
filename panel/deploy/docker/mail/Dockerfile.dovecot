@@ -1,0 +1,18 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       dovecot-core dovecot-imapd dovecot-lmtpd dovecot-pgsql ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 5000 vmail && useradd -u 5000 -g 5000 -s /usr/sbin/nologin -d /var/mail vmail \
+  && mkdir -p /var/mail/vhosts /etc/ssl/mail /var/spool/postfix \
+  && chown -R vmail:vmail /var/mail
+
+COPY panel/deploy/mail/dovecot /etc/dovecot
+
+COPY panel/deploy/docker/mail/entrypoint-dovecot.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 993
+CMD ["/entrypoint.sh"]

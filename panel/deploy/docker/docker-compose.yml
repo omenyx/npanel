@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: panel
+      POSTGRES_USER: panel
+      POSTGRES_PASSWORD: panel
+    ports:
+      - "5432:5432"
+    volumes:
+      - panel_pg:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.api
+    environment:
+      PANEL_POSTGRES_DSN: postgresql+asyncpg://panel:panel@postgres:5432/panel
+      PANEL_ENVIRONMENT: production
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    command: ["sh", "-c", "alembic -c /app/alembic.ini upgrade head; uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ../nginx/panel.docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../frontend/static:/opt/panel/frontend/static:ro
+    depends_on:
+      - api
+
+  dovecot:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mail/Dockerfile.dovecot
+    depends_on:
+      - postgres
+    volumes:
+      - mail_vhosts:/var/mail/vhosts
+      - postfix_spool:/var/spool/postfix
+
+  postfix:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mail/Dockerfile.postfix
+    depends_on:
+      - dovecot
+      - postgres
+    volumes:
+      - mail_vhosts:/var/mail/vhosts
+      - postfix_spool:/var/spool/postfix
+    ports:
+      - "25:25"
+      - "587:587"
+
+  webmail:
+    image: roundcube/roundcubemail:1.6-apache
+    environment:
+      ROUNDCUBEMAIL_DEFAULT_HOST: tls://dovecot
+      ROUNDCUBEMAIL_DEFAULT_PORT: 993
+      ROUNDCUBEMAIL_SMTP_SERVER: tls://postfix
+      ROUNDCUBEMAIL_SMTP_PORT: 587
+    depends_on:
+      - dovecot
+      - postfix
+    volumes:
+      - ../mail/roundcube/config.inc.php:/var/roundcube/config/config.inc.php:ro
+
+volumes:
+  panel_pg:
+  mail_vhosts:
+  postfix_spool:

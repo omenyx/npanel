@@ -1,0 +1,16 @@
+[Unit]
+Description=Lean Panel Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/panel
+EnvironmentFile=/etc/panel/panel.env
+ExecStart=/opt/panel/agent/panel-agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

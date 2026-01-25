@@ -1,0 +1,10 @@
+driver = pgsql
+connect = host=postgres dbname=panel user=panel password=panel
+
+default_pass_scheme = SHA512-CRYPT
+
+# Dovecot expects: user and password.
+password_query = \
+  SELECT (localpart || '@' || domain) AS user, password_hash AS password \
+  FROM mailboxes \
+  WHERE (localpart || '@' || domain) = '%u'

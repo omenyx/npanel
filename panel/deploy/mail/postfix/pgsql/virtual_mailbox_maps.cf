@@ -1,0 +1,6 @@
+# Query mailbox existence
+user = panel
+password = panel
+hosts = postgres
+dbname = panel
+query = SELECT 1 FROM mailboxes WHERE domain='%d' AND localpart='%u'

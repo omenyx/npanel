@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd=${1:-}
+
+case "$cmd" in
+  status)
+    systemctl status panel-api || true
+    ;;
+  *)
+    echo "usage: panelctl status" >&2
+    exit 2
+    ;;
+esac

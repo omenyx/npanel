@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Lean Panel{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script defer src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Lean Panel</div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/dns">DNS</a>
+      <a href="/services">Services</a>
+      <a href="/billing">Billing</a>
+      <a href="/account">Account</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
