@@ -304,7 +304,33 @@ phase_binaries() {
   if [ -f /etc/profile.d/go-path.sh ]; then
     source /etc/profile.d/go-path.sh
   fi
-  export PATH="/usr/local/go/bin:$PATH"
+  export PATH="/usr/local/go/bin:/usr/bin:/bin:$PATH"
+  
+  # CRITICAL: Verify Go actually works
+  if ! command -v go &> /dev/null; then
+    log_error "CRITICAL: Go command not found in PATH"
+    log_error "Current PATH: $PATH"
+    
+    # Try to find where Go was installed
+    if [ -f /usr/local/go/bin/go ]; then
+      log_error "Found Go at /usr/local/go/bin/go, adding to PATH"
+      export PATH="/usr/local/go/bin:$PATH"
+    elif command -v go 2>/dev/null; then
+      log_info "Found Go at: $(which go)"
+    else
+      log_error "Go binary not found anywhere. Installation failed."
+      exit "$EXIT_UNRECOVERABLE"
+    fi
+  fi
+  
+  # Verify Go version
+  local go_version
+  go_version=$(go version 2>&1) || {
+    log_error "CRITICAL: Go exists but fails to run"
+    log_error "Error: $go_version"
+    exit "$EXIT_UNRECOVERABLE"
+  }
+  log_success "Go verified: $go_version"
   
   local staging_dir="/tmp/npanel-staging-$$"
   local bin_dir="$INSTALL_PATH/bin"
@@ -338,30 +364,32 @@ phase_binaries() {
   if [ -d "$source_dir/backend" ] && [ -f "$source_dir/backend/main.go" ]; then
     cd "$source_dir/backend" || exit 1
     
-    # Verify Go is accessible
-    if ! command -v go &> /dev/null; then
-      log_error "Go not found in PATH after installation"
-      log_error "PATH=$PATH"
-      cd - > /dev/null || exit 1
-      rm -rf "$staging_dir"
-      exit "$EXIT_UNRECOVERABLE"
-    fi
-    
-    log_info "Go version: $(go version)"
-    
-    # Set Go module environment
+    # Set Go module environment with verbose output
     export GO111MODULE=on
     export GOPROXY=https://proxy.golang.org,direct
     
+    log_info "Working directory: $(pwd)"
     log_info "Downloading Go modules (this may take 2-3 minutes)..."
-    if ! go mod download >> "$LOG_FILE" 2>&1; then
-      log_error "Failed to download Go modules"
-      log_error "Check $LOG_FILE for details, or run: go mod download"
-      cd - > /dev/null || exit 1
-      rm -rf "$staging_dir"
-      exit "$EXIT_UNRECOVERABLE"
+    
+    # Try go mod download first
+    if go mod download 2>&1 | tee -a "$LOG_FILE"; then
+      log_success "Go modules downloaded successfully"
+    else
+      log_warn "go mod download failed, attempting go mod vendor fallback..."
+      
+      # Fallback: use vendor directory
+      if ! go mod vendor >> "$LOG_FILE" 2>&1; then
+        log_error "Both go mod download and go mod vendor failed"
+        log_error "Last 30 lines of build log:"
+        tail -30 "$LOG_FILE" | sed 's/^/  /'
+        cd - > /dev/null || exit 1
+        rm -rf "$staging_dir"
+        exit "$EXIT_UNRECOVERABLE"
+      fi
+      log_success "Go modules vendored successfully"
     fi
     
+    log_info "Building binary..."
     if ! go build -o "$staging_dir/npanel-api" . >> "$LOG_FILE" 2>&1; then
       log_error "Failed to build backend API"
       cd - > /dev/null || exit 1
@@ -372,7 +400,7 @@ phase_binaries() {
     cd - > /dev/null || exit 1
     log_success "Backend API binary built"
   else
-    log_error "Backend source code not found"
+    log_error "Backend source code not found at $source_dir/backend"
     rm -rf "$staging_dir"
     exit "$EXIT_UNRECOVERABLE"
   fi
