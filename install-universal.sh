@@ -322,8 +322,24 @@ phase_binaries() {
     export GO111MODULE=on
     export GOPROXY=https://proxy.golang.org,direct
     
+    # Configure git credentials for GitHub access
+    log_info "Configuring git credentials..."
+    git config --global credential.helper store 2>&1 || true
+    
+    # If GITHUB_TOKEN is set in environment, use it for authentication
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/" || true
+      log_info "Using GitHub token for authentication"
+    fi
+    
     log_info "Working directory: $(pwd)"
     log_info "Downloading Go modules (this may take 2-3 minutes)..."
+    
+    # First, ensure go.sum exists (may be missing from repo)
+    log_info "Tidying Go modules..."
+    if ! go mod tidy >> "$LOG_FILE" 2>&1; then
+      log_warn "go mod tidy had issues (may be non-fatal)"
+    fi
     
     # Try go mod download first (use whatever go is available)
     if go mod download 2>&1 | tee -a "$LOG_FILE"; then
@@ -336,6 +352,12 @@ phase_binaries() {
         log_error "Both go mod download and go mod vendor failed"
         log_error "Last 30 lines of build log:"
         tail -30 "$LOG_FILE" | sed 's/^/  /'
+        log_info ""
+        log_info "TROUBLESHOOTING:"
+        log_info "  1. Check GitHub connectivity: curl -I https://github.com"
+        log_info "  2. If using private repos, set GITHUB_TOKEN environment variable"
+        log_info "  3. Or configure SSH keys: ssh -T git@github.com"
+        log_info "  4. Run again with: GITHUB_TOKEN=your_token bash install-universal.sh"
         cd - > /dev/null || exit 1
         rm -rf "$staging_dir"
         exit "$EXIT_UNRECOVERABLE"
