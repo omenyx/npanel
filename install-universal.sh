@@ -722,6 +722,13 @@ EOF
 phase_preflight() {
   log_step 1 "Pre-flight checks"
   
+  # WSL Detection
+  IS_WSL=0
+  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
+    IS_WSL=1
+    log_info "WSL environment detected"
+  fi
+  
   # OS Detection
   if [ ! -f /etc/os-release ]; then
     log_error "Cannot detect OS - /etc/os-release not found"
@@ -853,7 +860,14 @@ phase_package_verification() {
   set_version_matrix
 
   check_version_range "systemd" "$(get_systemd_version)" "$SYSTEMD_MIN" "$SYSTEMD_MAX"
-  check_version_range "kernel" "$(get_kernel_version)" "$KERNEL_MIN" "$KERNEL_MAX"
+  
+  # Skip kernel check in WSL (uses unified kernel)
+  if [ "$IS_WSL" -eq 0 ]; then
+    check_version_range "kernel" "$(get_kernel_version)" "$KERNEL_MIN" "$KERNEL_MAX"
+  else
+    log_warn "Skipping kernel version check (WSL uses unified kernel)"
+  fi
+  
   check_version_range "glibc" "$(get_glibc_version)" "$GLIBC_MIN" "$GLIBC_MAX"
   check_version_range "openssl" "$(get_openssl_version)" "$OPENSSL_MIN" "$OPENSSL_MAX"
   check_version_range "curl" "$(get_curl_version)" "$CURL_MIN" "$CURL_MAX"
