@@ -281,13 +281,10 @@ phase_binaries() {
     log_error "Go not available in PATH after Phase 4"
     exit "$EXIT_UNRECOVERABLE"
   fi
-  log_success "Go available: $(go version)"
   
-  # Verify Go is available (simple check)
-  if ! command -v go &> /dev/null; then
-    log_error "Go not available in PATH after Phase 4"
-    exit "$EXIT_UNRECOVERABLE"
-  fi
+  # Force Go to use local version only (prevents automatic toolchain downloads)
+  export GOTOOLCHAIN=local
+  
   log_success "Go available: $(go version)"
   
   # Create directories
@@ -321,6 +318,7 @@ phase_binaries() {
     # Set Go module environment - use vendor mode to avoid network issues
     export GO111MODULE=on
     export GOFLAGS="-mod=vendor"
+    export GOTOOLCHAIN=local  # Use distro Go version, don't auto-download
     
     log_info "Working directory: $(pwd)"
     log_info "Preparing Go modules..."
