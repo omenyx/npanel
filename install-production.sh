@@ -156,63 +156,114 @@ install_dependencies() {
     case "$PKG_MANAGER" in
         apt-get)
             log "  Installing: golang nodejs npm git sqlite3..."
-            apt-get install -y golang-1.23 nodejs npm git sqlite3
+            apt-get install -y golang-1.23 nodejs npm git sqlite3 || {
+                error "Failed to install critical Go/Node packages"
+                return 1
+            }
             
             log "  Installing: build tools (gcc, make)..."
-            apt-get install -y build-essential gcc make
+            apt-get install -y build-essential gcc make || warning "Build tools installation had issues"
             
             log "  Installing: system monitoring tools..."
-            apt-get install -y procps sysstat curl wget
+            apt-get install -y procps sysstat curl wget || warning "Some monitoring tools unavailable"
             
             log "  Installing: nginx web server..."
-            apt-get install -y systemd nginx
+            apt-get install -y systemd nginx || {
+                error "Failed to install nginx (critical)"
+                return 1
+            }
             
             log "  Installing: email service (exim4)..."
-            apt-get install -y exim4
+            apt-get install -y exim4 || warning "Exim4 installation failed - email service will not be available"
             
             log "  Installing: DNS service (pdns-server)..."
-            apt-get install -y pdns-server
+            apt-get install -y pdns-server || warning "PowerDNS installation failed - DNS service will not be available"
             
             log "  Installing: SSL certificates (certbot)..."
-            apt-get install -y certbot python3-certbot-nginx
+            apt-get install -y certbot python3-certbot-nginx || warning "Certbot installation had issues"
             
             log "  Installing: monitoring (prometheus, grafana)..."
-            apt-get install -y prometheus grafana-server
+            
+            # Add Grafana repository
+            log "    Adding Grafana repository..."
+            apt-get install -y software-properties-common || true
+            add-apt-repository -y "deb https://packages.grafana.com/oss/deb stable main" 2>/dev/null || true
+            apt-get update -qq 2>/dev/null || true
+            
+            # Try to install prometheus
+            if apt-get install -y prometheus 2>/dev/null; then
+                success "    Prometheus installed"
+            else
+                warning "Prometheus installation failed - some monitoring features unavailable"
+            fi
+            
+            # Try to install grafana-server
+            if apt-get install -y grafana-server 2>/dev/null; then
+                success "    Grafana installed"
+            else
+                warning "Grafana installation failed - advanced monitoring visualization unavailable"
+                log "    To install Grafana manually later:"
+                log "      sudo apt-get install -y software-properties-common"
+                log "      sudo add-apt-repository 'deb https://packages.grafana.com/oss/deb stable main'"
+                log "      sudo apt-get update"
+                log "      sudo apt-get install -y grafana-server"
+            fi
             
             log "  Installing: utilities (rsync, openssh-server)..."
-            apt-get install -y rsync openssh-server
+            apt-get install -y rsync openssh-server || warning "Some utilities unavailable"
             ;;
         dnf)
             log "  Installing: golang nodejs npm git sqlite3..."
-            dnf install -y golang nodejs npm git sqlite
+            dnf install -y golang nodejs npm git sqlite || {
+                error "Failed to install critical Go/Node packages"
+                return 1
+            }
             
             log "  Installing: build tools (gcc, make)..."
-            dnf install -y gcc make
+            dnf install -y gcc make || warning "Build tools installation had issues"
             
             log "  Installing: system monitoring tools..."
-            dnf install -y procps-ng sysstat curl wget
+            dnf install -y procps-ng sysstat curl wget || warning "Some monitoring tools unavailable"
             
             log "  Installing: nginx web server..."
-            dnf install -y systemd nginx
+            dnf install -y systemd nginx || {
+                error "Failed to install nginx (critical)"
+                return 1
+            }
             
             log "  Installing: email service (exim)..."
-            dnf install -y exim
+            dnf install -y exim || warning "Exim installation failed - email service will not be available"
             
             log "  Installing: DNS service (pdns)..."
-            dnf install -y pdns
+            dnf install -y pdns || warning "PowerDNS installation failed - DNS service will not be available"
             
             log "  Installing: SSL certificates (certbot)..."
-            dnf install -y certbot certbot-nginx
+            dnf install -y certbot certbot-nginx || warning "Certbot installation had issues"
             
             log "  Installing: monitoring (prometheus, grafana)..."
-            dnf install -y prometheus grafana
+            
+            # Try to install prometheus
+            if dnf install -y prometheus 2>/dev/null; then
+                success "    Prometheus installed"
+            else
+                warning "Prometheus installation failed - some monitoring features unavailable"
+            fi
+            
+            # Try to install grafana
+            if dnf install -y grafana 2>/dev/null; then
+                success "    Grafana installed"
+            else
+                warning "Grafana installation failed - advanced monitoring visualization unavailable"
+                log "    Grafana can be installed from official repository:"
+                log "      sudo dnf install -y grafana"
+            fi
             
             log "  Installing: utilities (rsync, openssh-server)..."
-            dnf install -y rsync openssh-server
+            dnf install -y rsync openssh-server || warning "Some utilities unavailable"
             ;;
     esac
     
-    success "Dependencies installed"
+    success "Dependency installation completed"
 }
 
 # ==================== DIRECTORIES ====================
@@ -478,24 +529,21 @@ setup_ssl() {
 setup_monitoring() {
     log "Setting up monitoring infrastructure..."
     
-    log "  Downloading Prometheus configuration..."
-    # Get Prometheus config
-    curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/config/prometheus_phase5.yml \
-        -o /etc/prometheus/npanel-phase5.yml 2>/dev/null || true
+    local prometheus_installed=0
+    local grafana_installed=0
     
-    log "  Enabling Prometheus service..."
-    systemctl enable prometheus
-    systemctl restart prometheus
-    success "  Prometheus configured (:9090)"
-    
-    log "  Enabling Grafana service..."
-    systemctl enable grafana-server
-    systemctl restart grafana-server
-    success "  Grafana configured (:3000)"
-    
-    # Create scrape config
-    mkdir -p /etc/prometheus/npanel
-    cat > /etc/prometheus/npanel/scrape.yml << 'EOF'
+    # Check if Prometheus is installed
+    if command -v prometheus &> /dev/null; then
+        log "  Prometheus binary found - configuring..."
+        
+        log "  Downloading Prometheus configuration..."
+        mkdir -p /etc/prometheus
+        curl -fsSL https://raw.githubusercontent.com/omenyx/npanel/main/config/prometheus_phase5.yml \
+            -o /etc/prometheus/npanel-phase5.yml 2>/dev/null || true
+        
+        # Create scrape config
+        mkdir -p /etc/prometheus/npanel
+        cat > /etc/prometheus/npanel/scrape.yml << 'EOF'
 global:
   scrape_interval: 15s
 
@@ -507,13 +555,63 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9091']
 EOF
-
-    systemctl enable prometheus grafana-server
-    systemctl restart prometheus grafana-server
+        
+        log "  Enabling Prometheus service..."
+        if systemctl enable prometheus 2>/dev/null; then
+            if systemctl restart prometheus 2>/dev/null; then
+                sleep 1
+                if systemctl is-active --quiet prometheus; then
+                    success "  Prometheus configured (:9090)"
+                    prometheus_installed=1
+                else
+                    warning "Prometheus failed to start"
+                fi
+            else
+                warning "Failed to restart Prometheus service"
+            fi
+        else
+            warning "Failed to enable Prometheus service"
+        fi
+    else
+        warning "Prometheus binary not found - install manually or retry installation"
+        log "    To install Prometheus later:"
+        log "      sudo apt-get install -y prometheus"
+        log "      sudo systemctl restart prometheus"
+    fi
     
-    success "Monitoring configured"
-    log "  Prometheus: http://localhost:9090"
-    log "  Grafana: http://localhost:3000 (admin/admin)"
+    # Check if Grafana is installed
+    if command -v grafana-server &> /dev/null || systemctl list-unit-files | grep -q grafana-server; then
+        log "  Grafana binary found - configuring..."
+        
+        log "  Enabling Grafana service..."
+        if systemctl enable grafana-server 2>/dev/null; then
+            if systemctl restart grafana-server 2>/dev/null; then
+                sleep 2
+                if systemctl is-active --quiet grafana-server; then
+                    success "  Grafana configured (:3000)"
+                    grafana_installed=1
+                else
+                    warning "Grafana failed to start"
+                fi
+            else
+                warning "Failed to restart Grafana service"
+            fi
+        else
+            warning "Failed to enable Grafana service"
+        fi
+    else
+        warning "Grafana binary not found - advanced visualization unavailable"
+        log "    To install Grafana later:"
+        log "      sudo add-apt-repository 'deb https://packages.grafana.com/oss/deb stable main'"
+        log "      sudo apt-get update"
+        log "      sudo apt-get install -y grafana-server"
+        log "      sudo systemctl restart grafana-server"
+    fi
+    
+    if [ $prometheus_installed -eq 0 ] && [ $grafana_installed -eq 0 ]; then
+        warning "Neither Prometheus nor Grafana could be configured"
+        warning "Monitoring features will be limited"
+    fi
 }
 
 # ==================== EMAIL SERVICE ====================
