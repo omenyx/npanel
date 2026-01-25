@@ -159,9 +159,13 @@ check_os_support() {
     exit "$EXIT_UNSUPPORTED_OS"
   fi
   
-  . /etc/os-release
-  DISTRO="$ID"
-  DISTRO_VERSION="$VERSION_ID"
+  if ! . /etc/os-release; then
+    log_error "Failed to source /etc/os-release"
+    exit "$EXIT_UNSUPPORTED_OS"
+  fi
+  
+  DISTRO="${ID:-unknown}"
+  DISTRO_VERSION="${VERSION_ID:-unknown}"
   
   log_debug "Detected: $DISTRO $DISTRO_VERSION"
   
@@ -642,22 +646,38 @@ main() {
   log_info ""
   
   # Pre-flight
-  check_os_support
-  check_root
-  check_resources
-  check_ports
-  check_github_connectivity
+  log_info "Running Phase 1: Pre-flight checks..."
+  if ! check_os_support; then log_error "Phase 1 failed: OS support check"; exit 1; fi
+  
+  if ! check_root; then log_error "Phase 1 failed: Root check"; exit 1; fi
+  
+  if ! check_resources; then log_error "Phase 1 failed: Resource check"; exit 1; fi
+  
+  check_ports  # Warnings only, doesn't fail
+  
+  if ! check_github_connectivity; then log_error "Phase 1 failed: GitHub check"; exit 1; fi
   
   # State detection
-  detect_existing_installation
+  log_info "Running Phase 2: State detection..."
+  if ! detect_existing_installation; then log_error "Phase 2 failed"; exit 1; fi
   
   # Verify & deploy
-  verify_github_release
-  install_dependencies
-  deploy_binaries
-  create_config
-  create_systemd_services
-  start_services
+  log_info "Running Phase 3: GitHub verification..."
+  if ! verify_github_release; then log_error "Phase 3 failed"; exit 1; fi
+  
+  log_info "Running Phase 4: Dependency installation..."
+  if ! install_dependencies; then log_error "Phase 4 failed"; exit 1; fi
+  
+  log_info "Running Phase 5: Binary deployment..."
+  if ! deploy_binaries; then log_error "Phase 5 failed"; exit 1; fi
+  
+  log_info "Running Phase 6: Configuration..."
+  if ! create_config; then log_error "Phase 6 failed"; exit 1; fi
+  
+  if ! create_systemd_services; then log_error "Phase 6 failed (systemd)"; exit 1; fi
+  
+  log_info "Running Phase 7: Service startup..."
+  if ! start_services; then log_error "Phase 7 failed"; exit 1; fi
   
   # Success
   print_completion_summary
