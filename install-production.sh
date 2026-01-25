@@ -521,15 +521,43 @@ EOF
 setup_email() {
     log "Setting up email service (Exim4)..."
     
-    log "  Creating Exim4 configuration..."
-    # Configure Exim4
+    log "  Creating Exim4 configuration directory..."
     mkdir -p /etc/exim4/conf.d/{main,router,transport,auth,acl}
+    
+    log "  Creating basic Exim4 configuration..."
+    cat > /etc/exim4/update-exim4.conf.localnew << 'EXIMEOF'
+# Exim4 Configuration for nPanel
+# Automatically generated - modify as needed
+
+# Router for local delivery
+begin routers
+local_user:
+  driver = accept
+  domains = +local_domains
+  user = mail
+  transport = local_delivery
+  cannot_route_message = Unknown user
+
+EXIMEOF
     
     log "  Enabling Exim4 service..."
     systemctl enable exim4
-    systemctl start exim4
     
-    success "Email service configured"
+    if systemctl start exim4 2>&1; then
+        sleep 1
+        if systemctl is-active --quiet exim4; then
+            success "Email service (Exim4) configured and running"
+        else
+            warning "Exim4 started but failed to stabilize"
+            log "  To troubleshoot: journalctl -xeu exim4.service"
+        fi
+    else
+        warning "Exim4 failed to start - may need configuration"
+        log "  To configure email later:"
+        log "    sudo dpkg-reconfigure exim4-config"
+        log "    sudo systemctl restart exim4"
+        log ""
+    fi
 }
 
 # ==================== DNS SERVICE ====================
@@ -537,16 +565,149 @@ setup_email() {
 setup_dns() {
     log "Setting up DNS service (PowerDNS)..."
     
-    log "  Creating PowerDNS configuration..."
-    # Create PowerDNS config
+    log "  Creating PowerDNS configuration directory..."
     mkdir -p /etc/powerdns
+    
+    log "  Generating PowerDNS configuration file..."
+    cat > /etc/powerdns/pdns.conf << 'PDNSEOF'
+# PowerDNS Configuration for nPanel
+# Generated during installation
+
+# Listen on all interfaces
+local-address=0.0.0.0
+local-ipv6=::
+
+# Master or Slave
+master=yes
+
+# Backend configuration
+launch=gsqlite3
+gsqlite3-database=/opt/npanel/data/pdns.db
+
+# Logging
+loglevel=3
+log-dns-queries=no
+log-dns-details=no
+
+# Performance
+cache-ttl=120
+negquery-cache-ttl=60
+PDNSEOF
+    
+    log "  Creating PowerDNS SQLite database..."
+    if [ ! -f /opt/npanel/data/pdns.db ]; then
+        sqlite3 /opt/npanel/data/pdns.db << 'PDNSDBEOF'
+CREATE TABLE IF NOT EXISTS domains (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    master VARCHAR(128),
+    last_check INTEGER,
+    type VARCHAR(6),
+    notified_serial INTEGER,
+    account VARCHAR(40),
+    dnssec INTEGER DEFAULT 0,
+    nsec3param VARCHAR(255),
+    nsec3narrow INTEGER DEFAULT 0,
+    presigned INTEGER DEFAULT 0,
+    soa_edit VARCHAR(255),
+    soa_edit_api VARCHAR(255) DEFAULT 'DEFAULT',
+    api_rectify INTEGER DEFAULT 0,
+    zone VARCHAR(255),
+    catalog VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS records (
+    id INTEGER PRIMARY KEY,
+    domain_id INTEGER,
+    name VARCHAR(255),
+    type VARCHAR(10),
+    content VARCHAR(65535),
+    ttl INTEGER,
+    prio INTEGER,
+    disabled INTEGER DEFAULT 0,
+    ordername VARCHAR(255),
+    auth INTEGER DEFAULT 1,
+    FOREIGN KEY(domain_id) REFERENCES domains(id)
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY,
+    domain_id INTEGER,
+    name VARCHAR(255),
+    type VARCHAR(10),
+    modified_at INTEGER,
+    account VARCHAR(40),
+    comment VARCHAR(65535),
+    FOREIGN KEY(domain_id) REFERENCES domains(id)
+);
+
+CREATE TABLE IF NOT EXISTS domainmetadata (
+    id INTEGER PRIMARY KEY,
+    domain_id INTEGER,
+    kind VARCHAR(32),
+    content TEXT,
+    FOREIGN KEY(domain_id) REFERENCES domains(id)
+);
+
+CREATE TABLE IF NOT EXISTS cryptokeys (
+    id INTEGER PRIMARY KEY,
+    domain_id INTEGER,
+    flags INTEGER,
+    active INTEGER DEFAULT 1,
+    content TEXT,
+    FOREIGN KEY(domain_id) REFERENCES domains(id)
+);
+
+CREATE TABLE IF NOT EXISTS tsigkeys (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255),
+    algorithm VARCHAR(50),
+    secret VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS records_domain_id ON records(domain_id);
+CREATE INDEX IF NOT EXISTS records_name ON records(name);
+CREATE INDEX IF NOT EXISTS comments_domain_id ON comments(domain_id);
+CREATE INDEX IF NOT EXISTS domainmetadata_domain_id ON domainmetadata(domain_id);
+PDNSDBEOF
+        
+        chown nobody:nogroup /opt/npanel/data/pdns.db
+        chmod 660 /opt/npanel/data/pdns.db
+        success "  PowerDNS database created"
+    else
+        log "  PowerDNS database already exists"
+    fi
     
     log "  Enabling PowerDNS service..."
     systemctl enable pdns
-    if systemctl start pdns 2>/dev/null; then
-        success "DNS service configured"
+    
+    log "  Starting PowerDNS service..."
+    if systemctl start pdns 2>&1; then
+        sleep 2
+        if systemctl is-active --quiet pdns; then
+            success "DNS service (PowerDNS) configured and running"
+        else
+            warning "PowerDNS started but failed to remain active"
+            log "  Troubleshooting: Check /var/log/syslog or run:"
+            log "    journalctl -xeu pdns.service"
+            log "  PowerDNS may need zone configuration - this is optional"
+        fi
     else
-        warning "PowerDNS start failed - configure manually later"
+        local pdns_error=$(systemctl status pdns 2>&1 | grep -i "failed\|error" | head -1)
+        warning "PowerDNS service failed to start"
+        log "  Error: $pdns_error"
+        log ""
+        log "  ${YELLOW}PowerDNS is optional - nPanel can function without it${NC}"
+        log "  To troubleshoot and fix PowerDNS:"
+        log "    1. Check configuration: cat /etc/powerdns/pdns.conf"
+        log "    2. Check database: sqlite3 /opt/npanel/data/pdns.db \".tables\""
+        log "    3. View service logs: journalctl -xeu pdns.service"
+        log "    4. Restart manually: systemctl restart pdns"
+        log ""
+        log "  If PowerDNS is not needed, you can disable it:"
+        log "    systemctl disable pdns"
+        log "    systemctl stop pdns"
+        log ""
     fi
 }
 
@@ -758,9 +919,23 @@ ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━�
 ${BOLD}SERVICES STATUS${NC}
 ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 
+${CYAN}CORE SERVICES (Required):${NC}
 EOF
 
-    for service in npanel-agent npanel-api npanel-watchdog nginx prometheus grafana-server exim4 pdns; do
+    for service in npanel-agent npanel-api npanel-watchdog nginx; do
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            printf "  ${GREEN}✓${NC} %-20s (running)\n" "$service"
+        else
+            printf "  ${RED}✗${NC} %-20s (inactive)\n" "$service"
+        fi
+    done
+
+    cat << EOF
+
+${CYAN}MONITORING SERVICES:${NC}
+EOF
+
+    for service in prometheus grafana-server; do
         if systemctl is-active --quiet "$service" 2>/dev/null; then
             printf "  ${GREEN}✓${NC} %-20s (running)\n" "$service"
         else
@@ -769,6 +944,41 @@ EOF
     done
 
     cat << EOF
+
+${CYAN}OPTIONAL SERVICES (Can be configured later):${NC}
+EOF
+
+    for service in exim4 pdns; do
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            printf "  ${GREEN}✓${NC} %-20s (running)\n" "$service"
+        else
+            printf "  ${YELLOW}○${NC} %-20s (not running)\n" "$service"
+        fi
+    done
+
+    cat << EOF
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+${BOLD}SERVICE TROUBLESHOOTING${NC}
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${CYAN}If Exim4 (Email) failed to start:${NC}
+  1. Reconfigure Exim4: ${BOLD}sudo dpkg-reconfigure exim4-config${NC}
+  2. Restart the service: ${BOLD}sudo systemctl restart exim4${NC}
+  3. Check logs: ${BOLD}journalctl -xeu exim4.service${NC}
+  4. Email is optional - nPanel works without it
+
+${CYAN}If PowerDNS (DNS) failed to start:${NC}
+  1. Check configuration: ${BOLD}cat /etc/powerdns/pdns.conf${NC}
+  2. Verify database: ${BOLD}sqlite3 /opt/npanel/data/pdns.db ".tables"${NC}
+  3. Check service logs: ${BOLD}journalctl -xeu pdns.service${NC}
+  4. PowerDNS is optional - nPanel works without it
+  5. To disable: ${BOLD}sudo systemctl disable pdns && sudo systemctl stop pdns${NC}
+
+${CYAN}If any core service is not running:${NC}
+  1. Check status: ${BOLD}sudo systemctl status npanel-api${NC}
+  2. View logs: ${BOLD}journalctl -xeu npanel-api.service${NC}
+  3. Restart: ${BOLD}sudo systemctl restart npanel-api${NC}
 
 ${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}QUICK COMMANDS${NC}
