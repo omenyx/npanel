@@ -197,94 +197,35 @@ phase_dependencies() {
       log_info "Installing system packages..."
       apt-get install -y -qq \
         curl wget git build-essential \
-        nginx sqlite3 certbot \
+        nginx sqlite3 certbot golang-go \
         2>&1 | tee -a "$LOG_FILE" || {
         log_error "Failed to install system dependencies"
         exit 1
       }
       
       # Install Go
-      log_info "Installing Go 1.23..."
+      log_info "Installing Go..."
       
-      # Check if Go already works
-      if command -v go &> /dev/null && [ "$(go version 2>&1 | awk '{print $3}')" = "go1.23" ]; then
-        log_success "Go 1.23 already installed and functional"
+      # Check if Go already installed
+      if command -v go &> /dev/null; then
+        log_success "Go installed"
       else
-        log_warn "Go 1.23 not found or broken, installing fresh..."
-        
-        # Remove any broken Go installation
-        rm -rf /usr/local/go /usr/lib/go-* 2>/dev/null || true
-        
-        # Download and install official Go binary (most reliable)
-        log_info "Downloading official Go 1.23 binary..."
-        mkdir -p /tmp/go-install
-        cd /tmp/go-install
-        
-        local go_url="https://go.dev/dl/go1.23.linux-amd64.tar.gz"
-        log_info "Download URL: $go_url"
-        
-        # Try wget with verbose output first
-        if ! wget --timeout=30 "$go_url" 2>&1 | tee -a "$LOG_FILE"; then
-          log_warn "wget failed, trying curl..."
-          if ! curl -L --max-time 30 "$go_url" -o go1.23.linux-amd64.tar.gz 2>&1 | tee -a "$LOG_FILE"; then
-            log_error "Failed to download Go with both wget and curl"
-            log_error "Check network connectivity and firewall"
-            cd - > /dev/null
-            rm -rf /tmp/go-install
-            exit 1
-          fi
+        log_warn "Go not found, trying fallback binary install..."
+        mkdir -p /tmp/go-install && cd /tmp/go-install
+        wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
+        if [ -f go1.23.linux-amd64.tar.gz ]; then
+          tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
+          echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
+          chmod +x /etc/profile.d/go-path.sh && source /etc/profile.d/go-path.sh
         fi
-        
-        # Verify download
-        if [ ! -f go1.23.linux-amd64.tar.gz ]; then
-          log_error "Go tarball not found after download"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        fi
-        
-        log_info "Extracting Go..."
-        tar -xzf go1.23.linux-amd64.tar.gz || {
-          log_error "Failed to extract Go tarball"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        }
-        
-        log_info "Installing Go to /usr/local..."
-        rm -rf /usr/local/go
-        mv go /usr/local/ || {
-          log_error "Failed to move Go to /usr/local"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        }
-        
-        cd - > /dev/null
-        rm -rf /tmp/go-install
-        
-        log_info "Configuring Go environment..."
-        # Ensure Go is in PATH permanently
-        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
-        chmod +x /etc/profile.d/go-path.sh
-        source /etc/profile.d/go-path.sh
-        
-        # Also add to bashrc for non-login shells
-        if ! grep -q "/usr/local/go/bin" /etc/bash.bashrc 2>/dev/null; then
-          echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/bash.bashrc
-        fi
-        
-        # Verify installation
-        log_info "Verifying Go installation..."
-        if ! /usr/local/go/bin/go version &> /dev/null; then
-          log_error "Go installation failed - binary doesn't work"
+        cd - > /dev/null && rm -rf /tmp/go-install
+        if ! command -v go &> /dev/null; then
+          log_error "Go installation failed"
           exit 1
         fi
       fi
       
-      # Set PATH for current shell
-      export PATH="/usr/local/go/bin:$PATH"
-      log_success "Go verified: $(/usr/local/go/bin/go version)"
+      log_success "Go verified: $(go version)"
       
       # Install Node.js
       log_info "Installing Node.js 20..."
@@ -299,6 +240,42 @@ phase_dependencies() {
       ;;
       
     rocky|almalinux)
+      log_info "Updating package cache..."
+      dnf makecache
+      
+      log_info "Installing system packages..."
+      dnf install -y \
+        curl wget git \
+        nginx sqlite \
+        certbot golang \
+        2>&1 | tee -a "$LOG_FILE" || {
+        log_error "Failed to install system dependencies"
+        exit 1
+      }
+      
+      # Install Go
+      log_info "Installing Go..."
+      
+      # Check if Go already installed
+      if command -v go &> /dev/null; then
+        log_success "Go installed"
+      else
+        log_warn "Go not found, trying fallback binary install..."
+        mkdir -p /tmp/go-install && cd /tmp/go-install
+        wget -q https://go.dev/dl/go1.23.linux-amd64.tar.gz || curl -L https://go.dev/dl/go1.23.linux-amd64.tar.gz -o go1.23.linux-amd64.tar.gz
+        if [ -f go1.23.linux-amd64.tar.gz ]; then
+          tar -xzf go1.23.linux-amd64.tar.gz && rm -rf /usr/local/go && mv go /usr/local/
+          echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/go-path.sh
+          chmod +x /etc/profile.d/go-path.sh && source /etc/profile.d/go-path.sh
+        fi
+        cd - > /dev/null && rm -rf /tmp/go-install
+        if ! command -v go &> /dev/null; then
+          log_error "Go installation failed"
+          exit 1
+        fi
+      fi
+      
+      log_success "Go verified: $(go version)"
       log_info "Installing system packages..."
       dnf install -y \
         curl wget git \
@@ -308,89 +285,6 @@ phase_dependencies() {
         log_error "Failed to install system dependencies"
         exit 1
       }
-      
-      # Install Go
-      log_info "Installing Go 1.23..."
-      
-      # Check if Go already works
-      if command -v go &> /dev/null && [ "$(go version 2>&1 | awk '{print $3}')" = "go1.23" ]; then
-        log_success "Go 1.23 already installed and functional"
-      else
-        log_warn "Go 1.23 not found or broken, installing fresh..."
-        
-        # Remove any broken Go installation
-        rm -rf /usr/local/go /usr/lib/go-* 2>/dev/null || true
-        
-        # Download and install official Go binary (most reliable)
-        log_info "Downloading official Go 1.23 binary..."
-        mkdir -p /tmp/go-install
-        cd /tmp/go-install
-        
-        local go_url="https://go.dev/dl/go1.23.linux-amd64.tar.gz"
-        log_info "Download URL: $go_url"
-        
-        # Try wget with verbose output first
-        if ! wget --timeout=30 "$go_url" 2>&1 | tee -a "$LOG_FILE"; then
-          log_warn "wget failed, trying curl..."
-          if ! curl -L --max-time 30 "$go_url" -o go1.23.linux-amd64.tar.gz 2>&1 | tee -a "$LOG_FILE"; then
-            log_error "Failed to download Go with both wget and curl"
-            log_error "Check network connectivity and firewall"
-            cd - > /dev/null
-            rm -rf /tmp/go-install
-            exit 1
-          fi
-        fi
-        
-        # Verify download
-        if [ ! -f go1.23.linux-amd64.tar.gz ]; then
-          log_error "Go tarball not found after download"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        fi
-        
-        log_info "Extracting Go..."
-        tar -xzf go1.23.linux-amd64.tar.gz || {
-          log_error "Failed to extract Go tarball"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        }
-        
-        log_info "Installing Go to /usr/local..."
-        rm -rf /usr/local/go
-        mv go /usr/local/ || {
-          log_error "Failed to move Go to /usr/local"
-          cd - > /dev/null
-          rm -rf /tmp/go-install
-          exit 1
-        }
-        
-        cd - > /dev/null
-        rm -rf /tmp/go-install
-        
-        log_info "Configuring Go environment..."
-        # Ensure Go is in PATH permanently
-        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go-path.sh
-        chmod +x /etc/profile.d/go-path.sh
-        source /etc/profile.d/go-path.sh
-        
-        # Also add to bashrc for non-login shells
-        if ! grep -q "/usr/local/go/bin" /etc/bash.bashrc 2>/dev/null; then
-          echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/bash.bashrc
-        fi
-        
-        # Verify installation
-        log_info "Verifying Go installation..."
-        if ! /usr/local/go/bin/go version &> /dev/null; then
-          log_error "Go installation failed - binary doesn't work"
-          exit 1
-        fi
-      fi
-      
-      # Set PATH for current shell
-      export PATH="/usr/local/go/bin:$PATH"
-      log_success "Go verified: $(/usr/local/go/bin/go version)"
       
       # Install Node.js
       log_info "Installing Node.js 20..."
